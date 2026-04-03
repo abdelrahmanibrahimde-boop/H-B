@@ -2,6 +2,7 @@ import express from 'express';
 import { createServer as createViteServer } from 'vite';
 import path from 'path';
 import fs from 'fs';
+import cors from 'cors';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -35,6 +36,10 @@ async function startServer() {
   const PORT = 3000;
 
   app.use(express.json());
+  // Erlaubt Anfragen von externen Domains (wie z.B. deinem lokalen PC zu Vercel)
+  app.use(cors({
+    origin: '*' // Erlaubt vorerst Anfragen von überall, wichtig fürs Hosting
+  }));
 
   // API Routes
   app.post('/api/login', (req, res) => {

@@ -6,30 +6,37 @@
 import React, { useState, useEffect } from 'react';
 import Login from './components/Login';
 import Dashboard from './components/Dashboard';
+import { auth, db } from './firebase';
+import { onAuthStateChanged } from 'firebase/auth';
+import { doc, getDoc } from 'firebase/firestore';
 
 export default function App() {
   const [user, setUser] = useState<any>(null);
 
   useEffect(() => {
-    // Check local storage for persistent login
-    const storedUser = localStorage.getItem('chat_user');
-    if (storedUser) {
-      try {
-        setUser(JSON.parse(storedUser));
-      } catch (e) {
-        localStorage.removeItem('chat_user');
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (firebaseUser) {
+        const docRef = doc(db, 'users', firebaseUser.uid);
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+          setUser({ ...docSnap.data(), uid: firebaseUser.uid, id: firebaseUser.uid });
+        } else {
+          setUser({ uid: firebaseUser.uid, id: firebaseUser.uid, email: firebaseUser.email, username: firebaseUser.email?.split('@')[0] || 'User' });
+        }
+      } else {
+        setUser(null);
       }
-    }
+    });
+    
+    return () => unsubscribe();
   }, []);
 
   const handleLogin = (userData: any) => {
     setUser(userData);
-    localStorage.setItem('chat_user', JSON.stringify(userData));
   };
 
   const handleLogout = () => {
-    setUser(null);
-    localStorage.removeItem('chat_user');
+    auth.signOut();
   };
 
   return (
@@ -42,4 +49,3 @@ export default function App() {
     </>
   );
 }
-

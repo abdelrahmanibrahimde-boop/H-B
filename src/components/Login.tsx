@@ -1,11 +1,15 @@
 import React, { useState } from 'react';
 import { cn } from '@/lib/utils';
+import { auth, db } from '../firebase';
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
+import { doc, setDoc, getDoc } from 'firebase/firestore';
 
 interface LoginProps {
   onLogin: (user: any) => void;
 }
 
 export default function Login({ onLogin }: LoginProps) {
+  const [email, setEmail] = useState('');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -16,24 +20,19 @@ export default function Login({ onLogin }: LoginProps) {
     setError('');
 
     try {
-      const endpoint = isSignUp ? '/api/signup' : '/api/login';
-      const res = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password }),
-      });
-
-      const contentType = res.headers.get("content-type");
-      if (!contentType || !contentType.includes("application/json")) {
-        throw new Error("API-Fehler: Der Server antwortet nicht mit JSON. Bitte stelle sicher, dass du http://localhost:3000 nutzt.");
-      }
-
-      const data = await res.json();
-
-      if (data.success) {
-        onLogin(data.user);
+      if (isSignUp) {
+        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+        const newUser = { uid: userCredential.user.uid, id: userCredential.user.uid, username, email, birthdate: '', friends: [] };
+        await setDoc(doc(db, 'users', userCredential.user.uid), newUser);
+        onLogin(newUser);
       } else {
-        setError(data.message || (isSignUp ? 'Registrierung fehlgeschlagen' : 'Login fehlgeschlagen'));
+        const userCredential = await signInWithEmailAndPassword(auth, email, password);
+        const userDoc = await getDoc(doc(db, 'users', userCredential.user.uid));
+        if (userDoc.exists()) {
+          onLogin(userDoc.data());
+        } else {
+          onLogin({ uid: userCredential.user.uid, id: userCredential.user.uid, username: email });
+        }
       }
     } catch (err) {
       console.error("Auth-Fehler:", err);
@@ -54,17 +53,32 @@ export default function Login({ onLogin }: LoginProps) {
         <form onSubmit={handleSubmit} className="space-y-6">
           <div>
             <label className="block text-[#b9bbbe] text-xs font-bold uppercase mb-2">
-              Username
+              E-Mail
             </label>
             <input
-              type="text"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
               className="w-full bg-[#202225] text-white rounded p-3 outline-none focus:ring-2 focus:ring-[#7289da] transition-all"
               required
             />
           </div>
           
+          {isSignUp && (
+            <div>
+              <label className="block text-[#b9bbbe] text-xs font-bold uppercase mb-2">
+                Username
+              </label>
+              <input
+                type="text"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                className="w-full bg-[#202225] text-white rounded p-3 outline-none focus:ring-2 focus:ring-[#7289da] transition-all"
+                required
+              />
+            </div>
+          )}
+
           <div>
             <label className="block text-[#b9bbbe] text-xs font-bold uppercase mb-2">
               Password
@@ -92,12 +106,12 @@ export default function Login({ onLogin }: LoginProps) {
           {isSignUp ? (
             <p>
               Du hast schon einen Account?{' '}
-              <button type="button" onClick={() => setIsSignUp(false)} className="text-[#00aff4] hover:underline">Log In</button>
+              <button type="button" onClick={() => { setIsSignUp(false); setError(''); }} className="text-[#00aff4] hover:underline">Log In</button>
             </p>
           ) : (
             <p>
               Noch keinen Account?{' '}
-              <button type="button" onClick={() => setIsSignUp(true)} className="text-[#00aff4] hover:underline">Registrieren</button>
+              <button type="button" onClick={() => { setIsSignUp(true); setError(''); }} className="text-[#00aff4] hover:underline">Registrieren</button>
             </p>
           )}
         </div>
