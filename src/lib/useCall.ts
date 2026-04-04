@@ -112,6 +112,17 @@ export function useCall(currentUserId: string, onIncomingCall?: (callId: string,
     };
 
     // 5. ICE candidates exchange
+    const candidateQueue: RTCIceCandidateInit[] = [];
+
+    pc.onsignalingstatechange = () => {
+      if (pc.remoteDescription) {
+        candidateQueue.forEach(candidate => {
+          pc.addIceCandidate(new RTCIceCandidate(candidate)).catch(err => console.error('Error adding ICE candidate:', err));
+        });
+        candidateQueue.length = 0;
+      }
+    };
+
     pc.onicecandidate = (event) => {
       if (event.candidate) {
         const collectionName = isCaller ? 'offerCandidates' : 'answerCandidates';
@@ -124,11 +135,10 @@ export function useCall(currentUserId: string, onIncomingCall?: (callId: string,
       snapshot.docChanges().forEach((change) => {
         if (change.type === 'added') {
           const candidateData = change.doc.data();
-          const candidate = new RTCIceCandidate(candidateData);
-          try {
-            pc.addIceCandidate(candidate);
-          } catch (err) {
-            console.error('Error adding ICE candidate:', err);
+          if (pc.remoteDescription) {
+            pc.addIceCandidate(new RTCIceCandidate(candidateData)).catch(err => console.error('Error adding ICE candidate:', err));
+          } else {
+            candidateQueue.push(candidateData);
           }
         }
       });

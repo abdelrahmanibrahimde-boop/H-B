@@ -52,11 +52,10 @@ export default function CallOverlay({
   const isMutedRef = useRef(isMuted);
   const isDeafenedRef = useRef(isDeafened);
 
-  // Prevent duplicating the current user if calling oneself
-  const currentUserId = currentUser.uid;
-  const remoteUserId = activeChat.members?.find((id: string) => id !== currentUserId);
-  const displayRemoteName = activeChat.userData?.[remoteUserId]?.username || activeChat.name || "Remote User";
-  const displayRemotePhoto = activeChat.userData?.[remoteUserId]?.photoURL || activeChat.photoURL || null;
+  // Verhindert, dass man sich selbst sieht, wenn man angerufen wird und im "Self Chat" ist
+  const isSelfChat = activeChat.isSelf;
+  const displayRemoteName = isSelfChat ? (incomingCall ? "Eingehender Anruf..." : "Remote User") : activeChat.name;
+  const displayRemotePhoto = isSelfChat ? null : activeChat.photoURL;
 
   useEffect(() => { isMutedRef.current = isMuted; }, [isMuted]);
   useEffect(() => { isDeafenedRef.current = isDeafened; }, [isDeafened]);
