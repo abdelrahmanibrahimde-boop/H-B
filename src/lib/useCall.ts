@@ -278,12 +278,9 @@ export function useCall(currentUserId: string, onIncomingCall?: (callId: string,
     }
   };
 
-  const rejectCall = async (callId: string) => {
-    try {
-      await updateDoc(doc(db, 'calls', callId), { status: 'ended' });
-    } catch (error) {
-      console.error('Error rejecting call:', error);
-    }
+  const rejectCall = (callId: string) => {
+    // Fire & Forget - UI sofort zurücksetzen!
+    updateDoc(doc(db, 'calls', callId), { status: 'ended' }).catch(err => console.error('Error rejecting call:', err));
     setIncomingCall(null);
     setCallStatus('idle');
   };
@@ -349,13 +346,10 @@ export function useCall(currentUserId: string, onIncomingCall?: (callId: string,
     }
   };
 
-  const endCall = async () => {
+  const endCall = () => {
     if (callIdRef.current) {
-      try {
-        await updateDoc(doc(db, 'calls', callIdRef.current), { status: 'ended' });
-      } catch (error) {
-        console.error('Error ending call:', error);
-      }
+      // Fire & Forget: Firebase im Hintergrund updaten, UI blockiert nicht länger!
+      updateDoc(doc(db, 'calls', callIdRef.current), { status: 'ended' }).catch(err => console.error('Error ending call:', err));
     }
 
     cleanupListeners();
