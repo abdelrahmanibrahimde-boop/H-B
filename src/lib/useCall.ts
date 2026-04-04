@@ -218,28 +218,56 @@ export function useCall(currentUserId: string, onIncomingCall?: (callId: string,
       candidateQueue.length = 0;
     };
 
-    let lastSent = 0;
+    const localCandidates: any[] = [];
+    let candidateTimeout: NodeJS.Timeout | null = null;
+
     pc.onicecandidate = (event) => {
-      if (!event.candidate) return;
-      const now = Date.now();
-      if (now - lastSent < 100) return;
-      lastSent = now;
       const collectionName = isCaller ? 'offerCandidates' : 'answerCandidates';
-      addDoc(collection(callDoc, collectionName), event.candidate.toJSON());
+      
+      if (event.candidate) {
+        localCandidates.push(event.candidate.toJSON());
+        
+        // Batche die Updates, falls extrem viele Candidates reinkommen (spart massive Writes)
+        if (!candidateTimeout) {
+          candidateTimeout = setTimeout(() => {
+            setDoc(callDoc, { [collectionName]: localCandidates }, { merge: true }).catch(err => console.error('Error updating candidates:', err));
+            candidateTimeout = null;
+          }, 1000);
+        }
+      } else {
+        // Gathering abgeschlossen (alle Candidates gefunden) -> Sofortiges Schreiben
+        if (candidateTimeout) {
+          clearTimeout(candidateTimeout);
+          candidateTimeout = null;
+        }
+        setDoc(callDoc, { [collectionName]: localCandidates }, { merge: true }).catch(err => console.error('Error updating candidates:', err));
+      }
     };
 
+    unsubscribers.current.push(() => {
+      if (candidateTimeout) clearTimeout(candidateTimeout);
+    });
+
     const listenCollectionName = isCaller ? 'answerCandidates' : 'offerCandidates';
-    const unsubCandidates = onSnapshot(collection(callDoc, listenCollectionName), (snapshot) => {
-      snapshot.docChanges().forEach((change) => {
-        if (change.type === 'added') {
-          const candidateData = change.doc.data();
-          if (pc.remoteDescription) {
-            pc.addIceCandidate(new RTCIceCandidate(candidateData)).catch(err => console.error('Error adding ICE candidate:', err));
-          } else {
-            candidateQueue.push(candidateData);
-          }
+    let processedCandidates = 0;
+
+    // Lausche auf das Hauptdokument statt auf eine Subcollection
+    const unsubCandidates = onSnapshot(callDoc, (snapshot) => {
+      const data = snapshot.data();
+      if (data && data[listenCollectionName]) {
+        const candidates = data[listenCollectionName];
+        if (candidates.length > processedCandidates) {
+          const newCandidates = candidates.slice(processedCandidates);
+          newCandidates.forEach((candidateData: any) => {
+            if (pc.remoteDescription) {
+              pc.addIceCandidate(new RTCIceCandidate(candidateData)).catch(err => console.error('Error adding ICE candidate:', err));
+            } else {
+              candidateQueue.push(candidateData);
+            }
+          });
+          processedCandidates = candidates.length;
         }
-      });
+      }
     }, (error) => {
       console.error("Firestore listener error:", error);
     });
