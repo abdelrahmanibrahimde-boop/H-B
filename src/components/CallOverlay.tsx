@@ -52,6 +52,12 @@ export default function CallOverlay({
   const isMutedRef = useRef(isMuted);
   const isDeafenedRef = useRef(isDeafened);
 
+  // Prevent duplicating the current user if calling oneself
+  const remoteUserId = activeChat.id.split("_").find((id: string) => id !== currentUser.uid);
+  const isSelfChat = !remoteUserId;
+  const displayRemoteName = isSelfChat ? (incomingCall?.callerId || "Remote User") : activeChat.name;
+  const displayRemotePhoto = isSelfChat ? null : activeChat.photoURL;
+
   useEffect(() => { isMutedRef.current = isMuted; }, [isMuted]);
   useEffect(() => { isDeafenedRef.current = isDeafened; }, [isDeafened]);
 
@@ -204,11 +210,11 @@ export default function CallOverlay({
                 {currentUser.photoURL ? <img src={currentUser.photoURL} className="w-full h-full object-cover" /> : currentUser.username[0]?.toUpperCase()}
               </div>
               <div className="w-8 h-8 rounded-full border-2 border-[#2b2d31] bg-[#4f545c] flex items-center justify-center text-white text-xs overflow-hidden">
-                {activeChat.photoURL ? <img src={activeChat.photoURL} className="w-full h-full object-cover" /> : activeChat.name[0]?.toUpperCase()}
+                {displayRemotePhoto ? <img src={displayRemotePhoto} className="w-full h-full object-cover" /> : displayRemoteName[0]?.toUpperCase()}
               </div>
             </div>
             <div className="flex flex-col">
-              <span className="text-white font-bold text-sm">{activeChat.name}</span>
+              <span className="text-white font-bold text-sm">{displayRemoteName}</span>
               <span className="text-[#b9bbbe] text-xs capitalize">{callStatus === 'connected' ? 'In Call' : callStatus}</span>
             </div>
           </div>
@@ -221,31 +227,26 @@ export default function CallOverlay({
       <div className="flex-1 flex flex-col items-center justify-center bg-[#1e1f22] p-8">
         
         {/* Screen Share Area */}
-        {(localStreams.screen || remoteStreams.screen) && (
-          <div className="flex gap-6 mb-8 w-full max-w-6xl justify-center">
-            {localStreams.screen && (
-              <div className="relative group flex-1">
-                <video ref={localScreenRef} onDoubleClick={() => toggleFullscreen(localScreenRef)} autoPlay playsInline muted className="w-full aspect-video bg-black rounded-lg object-cover border border-[#2b2d31] shadow-lg cursor-pointer" />
-                <span className="absolute bottom-3 left-3 bg-black/70 text-white text-xs px-2 py-1 rounded">Dein Bildschirm</span>
-                <button onClick={() => toggleFullscreen(localScreenRef)} className="absolute top-3 right-3 bg-black/70 hover:bg-black/90 text-[#b9bbbe] hover:text-white p-1.5 rounded opacity-0 group-hover:opacity-100 transition-opacity z-10" title="Fullscreen">
-                  <Maximize size={16} />
-                </button>
-              </div>
-            )}
-            {remoteStreams.screen && (
-              <div className="relative group flex-1">
+        {remoteStreams.screen && (
+          <div className="flex w-full max-w-6xl justify-center mb-8">
+            <div className="relative group flex-1">
                 <video ref={remoteScreenRef} onDoubleClick={() => toggleFullscreen(remoteScreenRef)} autoPlay playsInline className="w-full aspect-video bg-black rounded-lg object-cover border border-[#2b2d31] shadow-lg cursor-pointer" />
-                <span className="absolute bottom-3 left-3 bg-black/70 text-white text-xs px-2 py-1 rounded">{activeChat.name}'s Bildschirm</span>
+                <span className="absolute bottom-3 left-3 bg-black/70 text-white text-xs px-2 py-1 rounded">{displayRemoteName}'s Bildschirm</span>
                 <button onClick={() => toggleFullscreen(remoteScreenRef)} className="absolute top-3 right-3 bg-black/70 hover:bg-black/90 text-[#b9bbbe] hover:text-white p-1.5 rounded opacity-0 group-hover:opacity-100 transition-opacity z-10" title="Fullscreen">
                   <Maximize size={16} />
                 </button>
               </div>
-            )}
           </div>
         )}
 
         <div className="flex items-center gap-16 mb-8">
           <div className="flex flex-col items-center gap-4">
+            {localStreams.screen && (
+              <div className="relative group mb-2">
+                <video ref={localScreenRef} autoPlay playsInline muted className="w-32 aspect-video bg-black rounded-lg object-cover border border-[#2b2d31] shadow-lg" />
+                <span className="absolute bottom-1 left-1 bg-black/70 text-white text-[10px] px-1 rounded">Preview</span>
+              </div>
+            )}
             {localStreams.camera ? (
               <div className="relative group">
                 <video ref={localVideoRef} onDoubleClick={() => toggleFullscreen(localVideoRef)} autoPlay playsInline muted className="w-64 aspect-video bg-black rounded-lg object-cover border border-[#2b2d31] shadow-lg cursor-pointer" />
@@ -286,7 +287,7 @@ export default function CallOverlay({
               </div>
             ) : (
               <div ref={remoteAvatarRef} className="w-32 h-32 rounded-full bg-[#2b2d31] flex items-center justify-center text-white text-5xl overflow-hidden transition-all duration-150 relative">
-                {activeChat.photoURL ? <img src={activeChat.photoURL} className="w-full h-full object-cover" /> : activeChat.name[0]?.toUpperCase()}
+                {displayRemotePhoto ? <img src={displayRemotePhoto} className="w-full h-full object-cover" /> : displayRemoteName[0]?.toUpperCase()}
                 {isDeafened && (
                   <div className="absolute bottom-1 right-1 bg-[#ed4245] p-1.5 rounded-full border-2 border-[#2b2d31]">
                     <Headphones size={14} className="text-white" />
@@ -294,7 +295,7 @@ export default function CallOverlay({
                 )}
               </div>
             )}
-            <span className="text-white font-medium text-lg">{activeChat.name}</span>
+            <span className="text-white font-medium text-lg">{displayRemoteName}</span>
           </div>
         </div>
 
@@ -357,10 +358,10 @@ export default function CallOverlay({
       <div className="absolute top-14 left-0 right-0 h-14 bg-[#2b2d31] border-b border-[#1e1f22] z-40 flex items-center justify-between px-4 shadow-md animate-in slide-in-from-top-2">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-full border border-[#1e1f22] bg-[#4f545c] flex items-center justify-center text-white text-xs overflow-hidden">
-            {activeChat.photoURL ? <img src={activeChat.photoURL} className="w-full h-full object-cover" /> : activeChat.name[0]?.toUpperCase()}
+              {displayRemotePhoto ? <img src={displayRemotePhoto} className="w-full h-full object-cover" /> : displayRemoteName[0]?.toUpperCase()}
           </div>
           <div className="flex flex-col">
-            <span className="text-white text-sm font-bold leading-tight">{activeChat.name}</span>
+              <span className="text-white text-sm font-bold leading-tight">{displayRemoteName}</span>
             <span className="text-[#3ba55c] text-xs font-medium leading-tight">
               {callStatus === 'connected' ? `Connected • ${formatDuration(duration)}` : callStatus === 'ringing' ? 'Incoming...' : 'Calling...'}
             </span>

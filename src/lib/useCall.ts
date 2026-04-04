@@ -66,20 +66,25 @@ export function useCall(currentUserId: string, onIncomingCall?: (callId: string,
     const pc = new RTCPeerConnection(servers);
     
     stream.getTracks().forEach((track) => {
-      pc.addTrack(track, stream);
+      const senders = pc.getSenders();
+      if (!senders.find(s => s.track === track)) {
+        pc.addTrack(track, stream);
+      }
     });
 
     pc.ontrack = (event) => {
       const track = event.track;
 
+      if (track.kind === "audio") {
+        setRemoteStream(event.streams[0]);
+      }
+      
       if (track.kind === "video") {
-        if (track.label.includes("screen") || event.streams[0]?.id.includes("screen")) {
+        if (track.contentHint === "detail" || track.label.includes("screen") || event.streams[0]?.id.includes("screen")) {
           setRemoteStreams(prev => ({ ...prev, screen: event.streams[0] }));
         } else {
           setRemoteStreams(prev => ({ ...prev, camera: event.streams[0] }));
         }
-      } else {
-        setRemoteStream(event.streams[0]);
       }
     };
 
@@ -257,9 +262,12 @@ export function useCall(currentUserId: string, onIncomingCall?: (callId: string,
         const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
         const track = stream.getVideoTracks()[0];
         
-        Object.defineProperty(track, 'label', { value: 'camera', writable: true });
+        track.contentHint = 'motion';
         
-        pcRef.current.addTrack(track, stream);
+        const senders = pcRef.current.getSenders();
+        if (!senders.find(s => s.track === track)) {
+          pcRef.current.addTrack(track, stream);
+        }
         setLocalStreams(prev => ({ ...prev, camera: stream }));
         setIsCameraOn(true);
       } catch (error) {
@@ -284,16 +292,20 @@ export function useCall(currentUserId: string, onIncomingCall?: (callId: string,
         const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
         const track = stream.getVideoTracks()[0];
         
-        Object.defineProperty(track, 'label', { value: 'screen', writable: true });
+        track.contentHint = 'detail';
 
         track.onended = () => {
           const sender = pcRef.current?.getSenders().find(s => s.track === track);
           if (sender && pcRef.current) pcRef.current.removeTrack(sender);
           setLocalStreams(prev => ({ ...prev, screen: null }));
+          setRemoteStreams(prev => ({ ...prev, screen: null }));
           setIsScreenSharing(false);
         };
 
-        pcRef.current.addTrack(track, stream);
+        const senders = pcRef.current.getSenders();
+        if (!senders.find(s => s.track === track)) {
+          pcRef.current.addTrack(track, stream);
+        }
         setLocalStreams(prev => ({ ...prev, screen: stream }));
         setIsScreenSharing(true);
       } catch (error) {
