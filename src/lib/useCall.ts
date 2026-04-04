@@ -66,25 +66,49 @@ export function useCall(currentUserId: string, onIncomingCall?: (callId: string,
     const pc = new RTCPeerConnection(servers);
     
     stream.getTracks().forEach((track) => {
-      const senders = pc.getSenders();
-      if (!senders.find(s => s.track === track)) {
-        pc.addTrack(track, stream);
-      }
+      pc.addTrack(track, stream);
     });
 
     pc.ontrack = (event) => {
       const track = event.track;
+      console.log("TRACK:", track.kind, track.contentHint);
 
       if (track.kind === "audio") {
-        setRemoteStream(event.streams[0]);
+        setRemoteStream(prev => {
+          const newStream = new MediaStream();
+      
+          if (prev) {
+            prev.getTracks().forEach(t => newStream.addTrack(t));
+          }
+      
+          const exists = newStream.getTracks().some(t => t.id === track.id);
+          if (!exists) {
+            newStream.addTrack(track);
+          }
+          return newStream;
+        });
+
+        return;
       }
       
       if (track.kind === "video") {
-        if (track.contentHint === "detail" || track.label.includes("screen") || event.streams[0]?.id.includes("screen")) {
+        const isScreen = track.contentHint === "detail";
+        
+        if (isScreen) {
           setRemoteStreams(prev => ({ ...prev, screen: event.streams[0] }));
         } else {
           setRemoteStreams(prev => ({ ...prev, camera: event.streams[0] }));
         }
+
+        track.onended = () => {
+          if (track.kind === "video") {
+            if (track.contentHint === "detail") {
+              setRemoteStreams(prev => ({ ...prev, screen: null }));
+            } else {
+              setRemoteStreams(prev => ({ ...prev, camera: null }));
+            }
+          }
+        };
       }
     };
 
@@ -264,10 +288,7 @@ export function useCall(currentUserId: string, onIncomingCall?: (callId: string,
         
         track.contentHint = 'motion';
         
-        const senders = pcRef.current.getSenders();
-        if (!senders.find(s => s.track === track)) {
-          pcRef.current.addTrack(track, stream);
-        }
+        pcRef.current.addTrack(track, stream);
         setLocalStreams(prev => ({ ...prev, camera: stream }));
         setIsCameraOn(true);
       } catch (error) {
@@ -298,14 +319,10 @@ export function useCall(currentUserId: string, onIncomingCall?: (callId: string,
           const sender = pcRef.current?.getSenders().find(s => s.track === track);
           if (sender && pcRef.current) pcRef.current.removeTrack(sender);
           setLocalStreams(prev => ({ ...prev, screen: null }));
-          setRemoteStreams(prev => ({ ...prev, screen: null }));
           setIsScreenSharing(false);
         };
 
-        const senders = pcRef.current.getSenders();
-        if (!senders.find(s => s.track === track)) {
-          pcRef.current.addTrack(track, stream);
-        }
+        pcRef.current.addTrack(track, stream);
         setLocalStreams(prev => ({ ...prev, screen: stream }));
         setIsScreenSharing(true);
       } catch (error) {

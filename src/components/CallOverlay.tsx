@@ -53,10 +53,10 @@ export default function CallOverlay({
   const isDeafenedRef = useRef(isDeafened);
 
   // Prevent duplicating the current user if calling oneself
-  const remoteUserId = activeChat.id.split("_").find((id: string) => id !== currentUser.uid);
-  const isSelfChat = !remoteUserId;
-  const displayRemoteName = isSelfChat ? (incomingCall?.callerId || "Remote User") : activeChat.name;
-  const displayRemotePhoto = isSelfChat ? null : activeChat.photoURL;
+  const currentUserId = currentUser.uid;
+  const remoteUserId = activeChat.members?.find((id: string) => id !== currentUserId) || activeChat.id.split("_").find((id: string) => id !== currentUserId);
+  const displayRemoteName = activeChat.userData?.[remoteUserId]?.username || activeChat.name || "Remote User";
+  const displayRemotePhoto = activeChat.userData?.[remoteUserId]?.photoURL || activeChat.photoURL || null;
 
   useEffect(() => { isMutedRef.current = isMuted; }, [isMuted]);
   useEffect(() => { isDeafenedRef.current = isDeafened; }, [isDeafened]);
@@ -126,9 +126,15 @@ export default function CallOverlay({
   }, [callStatus, localStream, remoteStream]);
 
   useEffect(() => {
-    if (audioRef.current && remoteStream) {
-      audioRef.current.srcObject = remoteStream;
+    if (!audioRef.current) return;
+
+    const stream = new MediaStream();
+
+    if (remoteStream) {
+      remoteStream.getAudioTracks().forEach(t => stream.addTrack(t));
     }
+
+    audioRef.current.srcObject = stream;
   }, [remoteStream]);
 
   useEffect(() => {
@@ -224,29 +230,38 @@ export default function CallOverlay({
         </div>
 
       {/* 2. Center UI */}
-      <div className="flex-1 flex flex-col items-center justify-center bg-[#1e1f22] p-8">
+      <div className="flex-1 flex flex-col items-center justify-center bg-[#1e1f22] p-8 w-full">
         
         {/* Screen Share Area */}
-        {remoteStreams.screen && (
-          <div className="flex w-full max-w-6xl justify-center mb-8">
-            <div className="relative group flex-1">
-                <video ref={remoteScreenRef} onDoubleClick={() => toggleFullscreen(remoteScreenRef)} autoPlay playsInline className="w-full aspect-video bg-black rounded-lg object-cover border border-[#2b2d31] shadow-lg cursor-pointer" />
+        {(localStreams.screen || remoteStreams.screen) && (
+          <div className="flex gap-6 justify-center items-center w-full max-w-[1100px] mb-8">
+            {remoteStreams.screen && (
+              <div className="relative group flex-1 aspect-video">
+                <video ref={remoteScreenRef} onDoubleClick={() => toggleFullscreen(remoteScreenRef)} autoPlay playsInline className="w-full h-full bg-black rounded-lg object-cover border border-[#2b2d31] shadow-lg cursor-pointer" />
                 <span className="absolute bottom-3 left-3 bg-black/70 text-white text-xs px-2 py-1 rounded">{displayRemoteName}'s Bildschirm</span>
                 <button onClick={() => toggleFullscreen(remoteScreenRef)} className="absolute top-3 right-3 bg-black/70 hover:bg-black/90 text-[#b9bbbe] hover:text-white p-1.5 rounded opacity-0 group-hover:opacity-100 transition-opacity z-10" title="Fullscreen">
                   <Maximize size={16} />
                 </button>
               </div>
+            )}
+            
+            {localStreams.screen && (
+              <div className="relative w-[280px] aspect-video shrink-0">
+                <video ref={localScreenRef} autoPlay playsInline muted className="w-full h-full bg-black rounded-lg object-cover shadow-lg" />
+                <span className="absolute bottom-2 left-2 bg-black/70 text-white text-[10px] px-2 py-1 rounded">Preview</span>
+                <button onClick={() => toggleFullscreen(localScreenRef)} className="absolute top-2 right-2 bg-black/70 hover:bg-black/90 text-[#b9bbbe] hover:text-white p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity z-10" title="Fullscreen">
+                  <Maximize size={14} />
+                </button>
+              </div>
+            )}
           </div>
         )}
 
-        <div className="flex items-center gap-16 mb-8">
+        {/* Users Row */}
+        <div className="flex flex-row items-center gap-16 mb-8">
+          
+          {/* Local User */}
           <div className="flex flex-col items-center gap-4">
-            {localStreams.screen && (
-              <div className="relative group mb-2">
-                <video ref={localScreenRef} autoPlay playsInline muted className="w-32 aspect-video bg-black rounded-lg object-cover border border-[#2b2d31] shadow-lg" />
-                <span className="absolute bottom-1 left-1 bg-black/70 text-white text-[10px] px-1 rounded">Preview</span>
-              </div>
-            )}
             {localStreams.camera ? (
               <div className="relative group">
                 <video ref={localVideoRef} onDoubleClick={() => toggleFullscreen(localVideoRef)} autoPlay playsInline muted className="w-64 aspect-video bg-black rounded-lg object-cover border border-[#2b2d31] shadow-lg cursor-pointer" />
@@ -272,6 +287,7 @@ export default function CallOverlay({
             <span className="text-white font-medium text-lg">{currentUser.username}</span>
           </div>
 
+          {/* Remote User */}
           <div className="flex flex-col items-center gap-4">
             {remoteStreams.camera ? (
               <div className="relative group">
