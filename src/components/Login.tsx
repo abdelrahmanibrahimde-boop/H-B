@@ -26,7 +26,7 @@ export default function Login({ onLogin }: LoginProps) {
     try {
       if (isSignUp) {
         // Prüfen, ob der Username bereits vergeben ist (case-insensitive)
-        const usernameLower = username.toLowerCase();
+        const usernameLower = username.trim().toLowerCase();
         const q = query(collection(db, 'users'), where('usernameLower', '==', usernameLower));
         const querySnapshot = await getDocs(q);
         if (!querySnapshot.empty) {
@@ -34,7 +34,7 @@ export default function Login({ onLogin }: LoginProps) {
         }
 
         const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-        const newUser = { uid: userCredential.user.uid, id: userCredential.user.uid, username, usernameLower: username.toLowerCase(), email, birthdate: '', friends: [], theme: 'default' };
+        const newUser = { uid: userCredential.user.uid, id: userCredential.user.uid, username: username.trim(), usernameLower, email, birthdate: '', friends: [], theme: 'default' };
         await setDoc(doc(db, 'users', userCredential.user.uid), newUser);
         localStorage.setItem('theme', 'default');
         document.documentElement.setAttribute('data-theme', 'default');

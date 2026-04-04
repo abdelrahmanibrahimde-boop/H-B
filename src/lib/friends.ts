@@ -34,7 +34,8 @@ export const sendFriendRequest = async (
       throw new Error("Anfrage wurde bereits gesendet.");
     }
   } catch (error: any) {
-    console.error("Fehler beim Prüfen der gesendeten Anfrage:", error);
+    // Wenn hier ein Fehler fliegt, liegt das sehr oft an einem fehlenden Composite Index in Firebase.
+    console.error("Fehler beim Prüfen der gesendeten Anfrage (Fehlt evtl. der Index?):", error);
     throw error;
   }
 
@@ -46,7 +47,7 @@ export const sendFriendRequest = async (
       throw new Error("Dieser Benutzer hat dir bereits eine Anfrage gesendet.");
     }
   } catch (error: any) {
-    console.error("Fehler beim Prüfen der erhaltenen Anfrage:", error);
+    console.error("Fehler beim Prüfen der erhaltenen Anfrage (Fehlt evtl. der Index?):", error);
     throw error;
   }
 
