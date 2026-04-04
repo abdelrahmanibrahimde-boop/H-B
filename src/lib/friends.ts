@@ -20,16 +20,21 @@ export const sendFriendRequest = async (
 
   if (currentFriends.includes(targetUser.uid)) throw new Error("Ihr seid bereits befreundet.");
 
-  // Prüfen, ob bereits eine Anfrage gesendet wurde
   const reqRef = collection(db, 'friendRequests');
+  
+  // 1. Check if the current user already sent a request to the target
   const qReq = query(reqRef, where('from', '==', currentUserId), where('to', '==', targetUser.uid));
   const reqSnap = await getDocs(qReq);
-  if (!reqSnap.empty) throw new Error("Anfrage wurde bereits gesendet.");
+  if (!reqSnap.empty) {
+    throw new Error("Anfrage wurde bereits gesendet.");
+  }
 
-  // Prüfen, ob der andere Nutzer uns schon angefragt hat
+  // 2. Check if the target user already sent a request to the current user (Reverse case)
   const reverseReq = query(reqRef, where('from', '==', targetUser.uid), where('to', '==', currentUserId));
   const reverseSnap = await getDocs(reverseReq);
-  if (!reverseSnap.empty) throw new Error("Dieser Benutzer hat dir bereits eine Anfrage gesendet.");
+  if (!reverseSnap.empty) {
+    throw new Error("Dieser Benutzer hat dir bereits eine Anfrage gesendet.");
+  }
 
   await addDoc(reqRef, {
     from: currentUserId,
