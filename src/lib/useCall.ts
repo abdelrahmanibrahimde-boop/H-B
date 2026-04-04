@@ -190,7 +190,6 @@ export function useCall(currentUserId: string, onIncomingCall?: (callId: string,
       const unsubCallDoc = onSnapshot(callDoc, async (snapshot) => {
         const data = snapshot.data();
         if (!data || data.status === 'ended') {
-        if (!data || data.status === 'ended') {
           endCall();
           return;
         }
@@ -240,7 +239,7 @@ export function useCall(currentUserId: string, onIncomingCall?: (callId: string,
 
       const unsubCallDoc = onSnapshot(callDoc, async (snapshot) => {
         const data = snapshot.data();
-        if (data?.status === 'ended') {
+        if (!data || data.status === 'ended') {
           endCall();
           return;
         }
@@ -345,11 +344,19 @@ export function useCall(currentUserId: string, onIncomingCall?: (callId: string,
 
     cleanupListeners();
 
-    if (localStreams.camera) localStreams.camera.getTracks().forEach(t => t.stop());
-    if (localStreams.screen) localStreams.screen.getTracks().forEach(t => t.stop());
-    
-    setLocalStreams({ camera: null, screen: null });
-    setRemoteStreams({ camera: null, screen: null });
+    // Sicheres Beenden aller Medien-Tracks (verhindert Stale-Closure-Bugs)
+    setLocalStreams((prev) => {
+      if (prev.camera) prev.camera.getTracks().forEach(t => t.stop());
+      if (prev.screen) prev.screen.getTracks().forEach(t => t.stop());
+      return { camera: null, screen: null };
+    });
+
+    setRemoteStreams((prev) => {
+      if (prev.camera) prev.camera.getTracks().forEach(t => t.stop());
+      if (prev.screen) prev.screen.getTracks().forEach(t => t.stop());
+      return { camera: null, screen: null };
+    });
+
     setIsScreenSharing(false);
     setIsCameraOn(false);
     setRemoteUid(null);
