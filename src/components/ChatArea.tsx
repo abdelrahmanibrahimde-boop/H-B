@@ -42,6 +42,7 @@ export default function ChatArea({ activeChat, user }: ChatAreaProps) {
     toggleScreenShare,
     isCameraOn,
     toggleCamera,
+    remoteUid,
   } = useCall(user.uid);
 
   // 🔥 Manage Call State for Chat Messages
@@ -165,6 +166,7 @@ export default function ChatArea({ activeChat, user }: ChatAreaProps) {
         toggleScreenShare={toggleScreenShare}
         isCameraOn={isCameraOn}
         toggleCamera={toggleCamera}
+        remoteUid={remoteUid}
       />
 
       {/* Header */}

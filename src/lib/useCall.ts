@@ -19,6 +19,7 @@ export function useCall(currentUserId: string, onIncomingCall?: (callId: string,
   const [callStatus, setCallStatus] = useState<'idle' | 'calling' | 'ringing' | 'connected'>('idle');
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [isCameraOn, setIsCameraOn] = useState(false);
+  const [remoteUid, setRemoteUid] = useState<string | null>(null);
 
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const callIdRef = useRef<string | null>(null);
@@ -45,6 +46,7 @@ export function useCall(currentUserId: string, onIncomingCall?: (callId: string,
         if (change.type === 'added') {
           const data = change.doc.data();
           setIncomingCall({ callId: change.doc.id, callerId: data.callerId });
+          setRemoteUid(data.callerId);
           setCallStatus('ringing');
           
           // Trigger UI callback
@@ -154,6 +156,7 @@ export function useCall(currentUserId: string, onIncomingCall?: (callId: string,
     try {
       const callDoc = doc(collection(db, 'calls'));
       callIdRef.current = callDoc.id;
+      setRemoteUid(receiverId);
       const { pc } = await setupMediaAndPC(callDoc, true);
 
       setCallStatus('calling');
@@ -338,6 +341,7 @@ export function useCall(currentUserId: string, onIncomingCall?: (callId: string,
     setRemoteStreams({ camera: null, screen: null });
     setIsScreenSharing(false);
     setIsCameraOn(false);
+    setRemoteUid(null);
 
     if (pcRef.current) {
       pcRef.current.close();
@@ -381,5 +385,6 @@ export function useCall(currentUserId: string, onIncomingCall?: (callId: string,
     toggleScreenShare,
     isCameraOn,
     toggleCamera,
+    remoteUid,
   };
 }

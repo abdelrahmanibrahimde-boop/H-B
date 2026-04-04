@@ -1,5 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Phone, PhoneOff, Mic, MicOff, Headphones, Video, MonitorUp, Minimize2, Maximize2, Maximize } from 'lucide-react';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '../firebase';
 
 interface CallOverlayProps {
   callStatus: 'idle' | 'calling' | 'ringing' | 'connected';
@@ -17,6 +19,7 @@ interface CallOverlayProps {
   toggleScreenShare: () => void;
   isCameraOn: boolean;
   toggleCamera: () => void;
+  remoteUid: string | null;
 }
 
 export default function CallOverlay({
@@ -35,6 +38,7 @@ export default function CallOverlay({
   toggleScreenShare,
   isCameraOn,
   toggleCamera,
+  remoteUid,
 }: CallOverlayProps) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const localAvatarRef = useRef<HTMLDivElement>(null);
@@ -52,10 +56,21 @@ export default function CallOverlay({
   const isMutedRef = useRef(isMuted);
   const isDeafenedRef = useRef(isDeafened);
 
-  // Verhindert, dass man sich selbst sieht, wenn man angerufen wird und im "Self Chat" ist
-  const isSelfChat = activeChat.isSelf;
-  const displayRemoteName = isSelfChat ? (incomingCall ? "Eingehender Anruf..." : "Remote User") : activeChat.name;
-  const displayRemotePhoto = isSelfChat ? null : activeChat.photoURL;
+  const [remoteUser, setRemoteUser] = useState<{username: string, photoURL: string} | null>(null);
+
+  // Echten Anrufer/Empfänger direkt aus der Datenbank laden, unabhängig vom aktiven Chat
+  useEffect(() => {
+    if (!remoteUid) {
+      setRemoteUser(null);
+      return;
+    }
+    getDoc(doc(db, 'users', remoteUid)).then(snap => {
+      if (snap.exists()) setRemoteUser(snap.data() as any);
+    });
+  }, [remoteUid]);
+
+  const displayRemoteName = remoteUser?.username || "Verbinde...";
+  const displayRemotePhoto = remoteUser?.photoURL || null;
 
   useEffect(() => { isMutedRef.current = isMuted; }, [isMuted]);
   useEffect(() => { isDeafenedRef.current = isDeafened; }, [isDeafened]);
