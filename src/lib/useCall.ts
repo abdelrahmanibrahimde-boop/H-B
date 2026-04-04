@@ -30,6 +30,59 @@ export function useCall(currentUserId: string, onIncomingCall?: (callId: string,
     unsubscribers.current = [];
   };
 
+  // 💡 ZENTRALE CLEANUP-FUNKTION (Nur lokaler Abbau, keine Datenbank-Schreibzugriffe!)
+  const cleanupLocal = () => {
+    cleanupListeners();
+
+    setLocalStreams((prev) => {
+      if (prev.camera) prev.camera.getTracks().forEach(t => t.stop());
+      if (prev.screen) prev.screen.getTracks().forEach(t => t.stop());
+      return { camera: null, screen: null };
+    });
+
+    setRemoteStreams((prev) => {
+      if (prev.camera) prev.camera.getTracks().forEach(t => t.stop());
+      if (prev.screen) prev.screen.getTracks().forEach(t => t.stop());
+      return { camera: null, screen: null };
+    });
+
+    setIsScreenSharing(false);
+    setIsCameraOn(false);
+    setRemoteUid(null);
+
+    if (pcRef.current) {
+      pcRef.current.close();
+      pcRef.current = null;
+    }
+
+    setLocalStream((prev) => {
+      prev?.getTracks().forEach((track) => track.stop());
+      return null;
+    });
+
+    setRemoteStream((prev) => {
+      prev?.getTracks().forEach((track) => track.stop());
+      return null;
+    });
+
+    setCallStatus('idle');
+    setIncomingCall(null);
+    callIdRef.current = null;
+  };
+
+  // 💡 LOGIK A: Reaktion auf Remote-Auflegen (Listener & Fallbacks)
+  const handleRemoteEnd = () => {
+    cleanupLocal();
+  };
+
+  // 💡 LOGIK B: Aktives Auflegen durch DIESEN User (Button-Klick)
+  const endCall = () => {
+    if (callIdRef.current) {
+      updateDoc(doc(db, 'calls', callIdRef.current), { status: 'ended' }).catch(err => console.error('Error ending call:', err));
+    }
+    cleanupLocal();
+  };
+
   // 2. listenForIncomingCalls
   useEffect(() => {
     if (!currentUserId) return;
@@ -57,9 +110,7 @@ export function useCall(currentUserId: string, onIncomingCall?: (callId: string,
           if (change.type === 'removed' || change.type === 'modified') {
             const data = change.doc.data();
             if (!data || data.status === 'ended') {
-              setIncomingCall(null);
-              setCallStatus('idle');
-              setRemoteUid(null);
+              handleRemoteEnd();
             }
           }
       });
@@ -115,14 +166,14 @@ export function useCall(currentUserId: string, onIncomingCall?: (callId: string,
     pc.oniceconnectionstatechange = () => {
       if (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed' || pc.iceConnectionState === 'closed') {
         console.warn('WebRTC ICE Connection lost. Fallback hangup triggered.');
-        endCall();
+        handleRemoteEnd();
       }
     };
 
     pc.onconnectionstatechange = () => {
       if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed' || pc.connectionState === 'closed') {
         console.warn('WebRTC Connection State lost. Fallback hangup triggered.');
-        endCall();
+        handleRemoteEnd();
       }
     };
 
@@ -206,7 +257,7 @@ export function useCall(currentUserId: string, onIncomingCall?: (callId: string,
       const unsubCallDoc = onSnapshot(callDoc, async (snapshot) => {
         const data = snapshot.data();
         if (!data || data.status === 'ended') {
-          endCall();
+          handleRemoteEnd();
           return;
         }
         
@@ -256,7 +307,7 @@ export function useCall(currentUserId: string, onIncomingCall?: (callId: string,
       const unsubCallDoc = onSnapshot(callDoc, async (snapshot) => {
         const data = snapshot.data();
         if (!data || data.status === 'ended') {
-          endCall();
+          handleRemoteEnd();
           return;
         }
         
@@ -281,8 +332,7 @@ export function useCall(currentUserId: string, onIncomingCall?: (callId: string,
   const rejectCall = (callId: string) => {
     // Fire & Forget - UI sofort zurücksetzen!
     updateDoc(doc(db, 'calls', callId), { status: 'ended' }).catch(err => console.error('Error rejecting call:', err));
-    setIncomingCall(null);
-    setCallStatus('idle');
+    cleanupLocal();
   };
 
   const toggleCamera = async () => {
@@ -344,51 +394,6 @@ export function useCall(currentUserId: string, onIncomingCall?: (callId: string,
         console.error('Error starting screen share:', error);
       }
     }
-  };
-
-  const endCall = () => {
-    if (callIdRef.current) {
-      // Fire & Forget: Firebase im Hintergrund updaten, UI blockiert nicht länger!
-      updateDoc(doc(db, 'calls', callIdRef.current), { status: 'ended' }).catch(err => console.error('Error ending call:', err));
-    }
-
-    cleanupListeners();
-
-    // Sicheres Beenden aller Medien-Tracks (verhindert Stale-Closure-Bugs)
-    setLocalStreams((prev) => {
-      if (prev.camera) prev.camera.getTracks().forEach(t => t.stop());
-      if (prev.screen) prev.screen.getTracks().forEach(t => t.stop());
-      return { camera: null, screen: null };
-    });
-
-    setRemoteStreams((prev) => {
-      if (prev.camera) prev.camera.getTracks().forEach(t => t.stop());
-      if (prev.screen) prev.screen.getTracks().forEach(t => t.stop());
-      return { camera: null, screen: null };
-    });
-
-    setIsScreenSharing(false);
-    setIsCameraOn(false);
-    setRemoteUid(null);
-
-    if (pcRef.current) {
-      pcRef.current.close();
-      pcRef.current = null;
-    }
-
-    setLocalStream((prev) => {
-      prev?.getTracks().forEach((track) => track.stop());
-      return null;
-    });
-
-    setRemoteStream((prev) => {
-      prev?.getTracks().forEach((track) => track.stop());
-      return null;
-    });
-
-    setCallStatus('idle');
-    setIncomingCall(null);
-    callIdRef.current = null;
   };
 
   // Cleanup connection on unmount
