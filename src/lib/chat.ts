@@ -31,17 +31,26 @@ export const createChat = async (currentUserId: string, otherUserId: string): Pr
  * @param senderId The UID of the sender
  * @param senderUsername The username of the sender
  * @param text The message content
+ * @param type The message type (text, image, video, file)
+ * @param fileUrl The base64 file string
+ * @param fileName The original file name
  */
-export const sendMessage = async (chatId: string, senderId: string, senderUsername: string, text: string) => {
+export const sendMessage = async (chatId: string, senderId: string, senderUsername: string, text: string, type: string = 'text', fileUrl: string | null = null, fileName: string | null = null) => {
   const messagesRef = collection(db, 'chats', chatId, 'messages');
   
-  await addDoc(messagesRef, {
+  const messageData: any = {
     text,
     senderId,
     senderUsername,
     deleted: false,
     createdAt: serverTimestamp(),
-  });
+    type,
+  };
+
+  if (fileUrl) messageData.fileUrl = fileUrl;
+  if (fileName) messageData.fileName = fileName;
+
+  await addDoc(messagesRef, messageData);
 };
 
 /**

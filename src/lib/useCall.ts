@@ -15,10 +15,12 @@ export function useCall(currentUserId: string, onIncomingCall?: (callId: string,
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
   const [incomingCall, setIncomingCall] = useState<{ callId: string; callerId: string } | null>(null);
   const [callStatus, setCallStatus] = useState<'idle' | 'calling' | 'ringing' | 'connected'>('idle');
+  const [isScreenSharing, setIsScreenSharing] = useState(false);
 
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const callIdRef = useRef<string | null>(null);
   const unsubscribers = useRef<(() => void)[]>([]);
+  const screenTrackRef = useRef<MediaStreamTrack | null>(null);
 
   const cleanupListeners = () => {
     unsubscribers.current.forEach((unsub) => unsub());
@@ -194,6 +196,68 @@ export function useCall(currentUserId: string, onIncomingCall?: (callId: string,
     setCallStatus('idle');
   };
 
+  const toggleScreenShare = async () => {
+    if (!pcRef.current) return;
+
+    if (isScreenSharing) {
+      // Stop sharing
+      if (screenTrackRef.current) {
+        screenTrackRef.current.stop();
+        const transceiver = pcRef.current.getTransceivers().find(t => t.sender.track === screenTrackRef.current);
+        if (transceiver) {
+          try {
+            await transceiver.sender.replaceTrack(null);
+          } catch (e) {
+            pcRef.current.removeTrack(transceiver.sender);
+          }
+        }
+        if (localStream) {
+          localStream.removeTrack(screenTrackRef.current);
+        }
+        screenTrackRef.current = null;
+      }
+      setIsScreenSharing(false);
+    } else {
+      // Start sharing
+      try {
+        const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+        const videoTrack = screenStream.getVideoTracks()[0];
+
+        videoTrack.onended = async () => {
+          // Handle browser UI "Stop sharing" button
+          if (screenTrackRef.current) {
+            const transceiver = pcRef.current?.getTransceivers().find(t => t.sender.track === screenTrackRef.current);
+            if (transceiver && pcRef.current) {
+              try {
+                await transceiver.sender.replaceTrack(null);
+              } catch (e) {
+                pcRef.current.removeTrack(transceiver.sender);
+              }
+            }
+            if (localStream) localStream.removeTrack(screenTrackRef.current);
+            screenTrackRef.current = null;
+          }
+          setIsScreenSharing(false);
+        };
+
+        const transceiver = pcRef.current.getTransceivers().find(t => t.sender.track?.kind === 'video' || t.receiver.track?.kind === 'video');
+        if (transceiver) {
+          await transceiver.sender.replaceTrack(videoTrack);
+        } else {
+          pcRef.current.addTrack(videoTrack, localStream!);
+        }
+
+        if (localStream) {
+          localStream.addTrack(videoTrack);
+        }
+        screenTrackRef.current = videoTrack;
+        setIsScreenSharing(true);
+      } catch (error) {
+        console.error('Error starting screen share:', error);
+      }
+    }
+  };
+
   const endCall = async () => {
     if (callIdRef.current && callStatus !== 'idle') {
       try {
@@ -204,6 +268,13 @@ export function useCall(currentUserId: string, onIncomingCall?: (callId: string,
     }
 
     cleanupListeners();
+
+    // Cleanup screen track
+    if (screenTrackRef.current) {
+      screenTrackRef.current.stop();
+      screenTrackRef.current = null;
+    }
+    setIsScreenSharing(false);
 
     if (pcRef.current) {
       pcRef.current.close();
@@ -241,5 +312,7 @@ export function useCall(currentUserId: string, onIncomingCall?: (callId: string,
     remoteStream,
     incomingCall,
     callStatus,
+    isScreenSharing,
+    toggleScreenShare,
   };
 }

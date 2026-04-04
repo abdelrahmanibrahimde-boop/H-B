@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Phone, Video, PlusCircle, Image as ImageIcon, FileText, Film, Send, Trash2, Pencil } from 'lucide-react';
+import { Phone, Video, PlusCircle, Image as ImageIcon, FileText, Film, Send, Trash2, Pencil, X, Download } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { listenMessages, sendMessage, deleteMessage, editMessage } from '../lib/chat';
 import { useCall } from '../lib/useCall';
@@ -21,6 +21,11 @@ export default function ChatArea({ activeChat, user }: ChatAreaProps) {
   const [editContent, setEditContent] = useState('');
   const [showProfileModal, setShowProfileModal] = useState(false);
 
+  // 🔥 File Upload & Media State
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploadType, setUploadType] = useState<'image' | 'video' | 'file'>('image');
+  const [fullscreenMedia, setFullscreenMedia] = useState<{ url: string; type: 'image' | 'video' } | null>(null);
+
   // 🔥 Initialize the WebRTC call hook
   const {
     createCall,
@@ -31,7 +36,14 @@ export default function ChatArea({ activeChat, user }: ChatAreaProps) {
     remoteStream,
     incomingCall,
     callStatus,
+    isScreenSharing,
+    toggleScreenShare,
   } = useCall(user.uid);
+
+  // 🔥 Manage Call State for Chat Messages
+  const isCallerRef = useRef(false);
+  const prevCallStatusRef = useRef(callStatus);
+  const callStartTimeRef = useRef<number | null>(null);
 
   const handleCallClick = () => {
     if (activeChat.isSelf) {
@@ -43,9 +55,36 @@ export default function ChatArea({ activeChat, user }: ChatAreaProps) {
     const friendUid = activeChat.id.split('_').find((id) => id !== user.uid);
     if (friendUid) {
       console.log('Calling UID:', friendUid);
+      isCallerRef.current = true;
       createCall(friendUid);
+      sendMessage(activeChat.id, user.uid, user.username, "📞 Call started");
     }
   };
+
+  // Detect call transitions to post auto chat messages
+  useEffect(() => {
+    if (prevCallStatusRef.current === 'calling' && callStatus === 'idle') {
+      if (isCallerRef.current) {
+        sendMessage(activeChat.id, user.uid, user.username, "📞 Missed call");
+      }
+      isCallerRef.current = false;
+    }
+    if (callStatus === 'connected' && prevCallStatusRef.current !== 'connected') {
+      callStartTimeRef.current = Date.now();
+    }
+    if (prevCallStatusRef.current === 'connected' && callStatus === 'idle') {
+      if (isCallerRef.current && callStartTimeRef.current) {
+        const durationSeconds = Math.floor((Date.now() - callStartTimeRef.current) / 1000);
+        const mins = Math.floor(durationSeconds / 60);
+        const secs = durationSeconds % 60;
+        const formatted = `${mins}:${secs.toString().padStart(2, '0')}`;
+        sendMessage(activeChat.id, user.uid, user.username, `📞 Call ended • ${formatted}`);
+      }
+      callStartTimeRef.current = null;
+      isCallerRef.current = false;
+    }
+    prevCallStatusRef.current = callStatus;
+  }, [callStatus, activeChat.id, user.uid, user.username]);
 
   // 🔥 Auto-scroll
   useEffect(() => {
@@ -72,8 +111,38 @@ export default function ChatArea({ activeChat, user }: ChatAreaProps) {
     setText('');
   };
 
+  // 🔥 Handle File Upload
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 5 * 1024 * 1024) {
+      alert('Die Datei ist zu groß. Die maximale Größe beträgt 5MB.');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onloadend = async () => {
+      const base64 = reader.result as string;
+      await sendMessage(activeChat.id, user.uid, user.username, "", uploadType, base64, file.name);
+      setShowAttachMenu(false);
+    };
+    reader.readAsDataURL(file);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const triggerUpload = (type: 'image' | 'video' | 'file') => {
+    setUploadType(type);
+    if (fileInputRef.current) {
+      if (type === 'image') fileInputRef.current.accept = 'image/*';
+      else if (type === 'video') fileInputRef.current.accept = 'video/*';
+      else fileInputRef.current.accept = '*/*';
+      fileInputRef.current.click();
+    }
+  };
+
   return (
-    <div className="flex-1 flex flex-col bg-[#36393f] relative">
+    <div className="flex-1 flex flex-col bg-[var(--bg)] relative">
 
       {/* 🔥 Call Overlay */}
       <CallOverlay
@@ -84,10 +153,14 @@ export default function ChatArea({ activeChat, user }: ChatAreaProps) {
         endCall={endCall}
         localStream={localStream}
         remoteStream={remoteStream}
+        currentUser={user}
+        activeChat={activeChat}
+        isScreenSharing={isScreenSharing}
+        toggleScreenShare={toggleScreenShare}
       />
 
       {/* Header */}
-      <div className="h-14 border-b border-[#202225] flex items-center px-4 shadow-sm z-10 relative">
+      <div className="h-14 border-b border-[var(--bg-ter)] flex items-center px-4 shadow-sm z-10 relative">
         <div className="flex-1"></div>
 
         <div 
@@ -101,13 +174,13 @@ export default function ChatArea({ activeChat, user }: ChatAreaProps) {
               activeChat.isSelf ? user.username[0]?.toUpperCase() : activeChat.name[0]?.toUpperCase()
             )}
           </div>
-          <span className="font-bold text-white text-lg">
+          <span className="font-bold text-[var(--text)] text-lg">
             {activeChat.name}
           </span>
         </div>
 
-        <div className="flex-1 flex justify-end items-center gap-4 text-[#b9bbbe]">
-          <button onClick={handleCallClick} className="hover:text-[#dcddde] transition-colors" title="Start Voice Call">
+        <div className="flex-1 flex justify-end items-center gap-4 text-[var(--text-mut)]">
+          <button onClick={handleCallClick} className="hover:text-[var(--text)] transition-colors" title="Start Voice Call">
             <Phone size={20} />
           </button>
           <button className="hover:text-[#dcddde] transition-colors">
@@ -134,7 +207,7 @@ export default function ChatArea({ activeChat, user }: ChatAreaProps) {
               </div>
 
               <div className={`flex flex-col ${msg.senderId === user.uid ? "items-end" : "items-start"}`}>
-              <div className="text-xs text-[#72767d] mb-1">
+              <div className="text-xs text-[var(--text-timestamp)] mb-1">
                 {msg.senderUsername || msg.senderId}
               </div>
 
@@ -145,7 +218,7 @@ export default function ChatArea({ activeChat, user }: ChatAreaProps) {
                       type="text"
                       value={editContent}
                       onChange={(e) => setEditContent(e.target.value)}
-                      className="bg-[#2f3136] text-[#dcddde] px-3 py-2 rounded-lg outline-none border border-[#7289da] w-full text-sm"
+                      className="bg-[var(--bg-sec)] text-[var(--text)] px-3 py-2 rounded-lg outline-none border border-[#7289da] w-full text-sm"
                       autoFocus
                       onKeyDown={(e) => {
                         if (e.key === 'Enter' && editContent.trim()) {
@@ -162,13 +235,45 @@ export default function ChatArea({ activeChat, user }: ChatAreaProps) {
                   <div
                     className={`px-3 py-2 rounded-lg relative ${
                       msg.deleted
-                        ? "bg-transparent border border-[#40444b] text-[#72767d] italic"
+                        ? "bg-transparent border border-[var(--bg-hov)] text-[var(--text-timestamp)] italic"
+                        : msg.type === 'image' || msg.type === 'video'
+                        ? "bg-transparent px-0 py-0"
                         : msg.senderId === user.uid
                         ? "bg-[#5865f2] text-white"
-                        : "bg-[#2f3136] text-[#dcddde]"
+                        : "bg-[var(--bg-sec)] text-[var(--text)]"
                     }`}
                   >
-                    {msg.deleted ? "Diese Nachricht wurde gelöscht." : msg.text}
+                    {msg.deleted ? (
+                      "Diese Nachricht wurde gelöscht."
+                    ) : msg.type === 'image' ? (
+                      <img 
+                        src={msg.fileUrl} 
+                        alt="attachment" 
+                        className="max-w-[300px] max-h-[300px] object-cover cursor-pointer hover:opacity-90 transition-opacity rounded-lg border border-[#202225]"
+                        onClick={() => setFullscreenMedia({ url: msg.fileUrl, type: 'image' })}
+                      />
+                    ) : msg.type === 'video' ? (
+                      <video 
+                        src={msg.fileUrl} 
+                        controls
+                        className="max-w-[300px] max-h-[300px] rounded-lg border border-[#202225] bg-black cursor-pointer"
+                        onDoubleClick={() => setFullscreenMedia({ url: msg.fileUrl, type: 'video' })}
+                      />
+                    ) : msg.type === 'file' ? (
+                      <div className="flex items-center gap-3 bg-[var(--bg-sec)] p-3 rounded-lg border border-[var(--bg-ter)] min-w-[250px]">
+                        <div className="p-2 bg-[var(--bg-hov)] rounded">
+                          <FileText size={24} className="text-[var(--text-mut)]" />
+                        </div>
+                        <div className="flex flex-col flex-1 overflow-hidden">
+                          <span className="text-sm font-medium text-[var(--text)] truncate" title={msg.fileName}>{msg.fileName || "File"}</span>
+                          <a href={msg.fileUrl} download={msg.fileName} className="text-[#00aff4] hover:underline text-xs flex items-center gap-1 mt-1">
+                            <Download size={12} /> Herunterladen
+                          </a>
+                        </div>
+                      </div>
+                    ) : (
+                      msg.text
+                    )}
                     {msg.edited && !msg.deleted && (
                       <span className="text-[10px] opacity-70 ml-2">(bearbeitet)</span>
                     )}
@@ -179,20 +284,23 @@ export default function ChatArea({ activeChat, user }: ChatAreaProps) {
                   <div className="flex opacity-0 group-hover:opacity-100 transition-all gap-1">
                     <button 
                       onClick={() => { setEditingMessageId(msg.id); setEditContent(msg.text); }}
-                      className="p-1.5 text-[#b9bbbe] hover:bg-[#2f3136] rounded"
+                      className="p-1.5 text-[var(--text-mut)] hover:bg-[var(--bg-sec)] rounded"
                       title="Nachricht bearbeiten"
                     >
                       <Pencil size={16} />
                     </button>
                     <button 
                       onClick={() => setMessageToDelete(msg.id)}
-                      className="p-1.5 text-[#ed4245] hover:bg-[#2f3136] rounded"
+                      className="p-1.5 text-[#ed4245] hover:bg-[var(--bg-sec)] rounded"
                       title="Nachricht löschen"
                     >
                       <Trash2 size={16} />
                     </button>
                   </div>
                 )}
+              </div>
+              <div className="text-[10px] text-[var(--text-timestamp)] mt-1 px-1 min-h-[15px]">
+                {msg.createdAt?.toDate ? msg.createdAt.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }) : ''}
               </div>
               </div>
             </div>
@@ -204,34 +312,35 @@ export default function ChatArea({ activeChat, user }: ChatAreaProps) {
 
       {/* Input */}
       <div className="p-4 pt-0">
-        <div className="bg-[#40444b] rounded-lg flex items-center px-4 py-2 relative">
+        <div className="bg-[var(--bg-hov)] rounded-lg flex items-center px-4 py-2 relative">
 
           {/* Attach */}
           <div className="relative">
             <button
               type="button"
               onClick={() => setShowAttachMenu((prev) => !prev)}
-              className="text-[#b9bbbe] hover:text-[#dcddde] transition-colors p-2 -ml-2 rounded-full hover:bg-[#36393f]"
+              className="text-[var(--text-mut)] hover:text-[var(--text)] transition-colors p-2 -ml-2 rounded-full hover:bg-[var(--bg)]"
             >
               <PlusCircle size={24} />
             </button>
 
             {showAttachMenu && (
-              <div className="absolute bottom-full left-0 mb-2 w-48 bg-[#2f3136] rounded-md shadow-lg border border-[#202225] py-2 z-20">
-                <button className="w-full flex items-center gap-3 px-4 py-2 text-[#b9bbbe] hover:bg-[#40444b] hover:text-white transition-colors">
+              <div className="absolute bottom-full left-0 mb-2 w-48 bg-[var(--bg-sec)] rounded-md shadow-lg border border-[var(--bg-ter)] py-2 z-20">
+                <button onClick={() => triggerUpload('image')} className="w-full flex items-center gap-3 px-4 py-2 text-[var(--text-mut)] hover:bg-[var(--bg-hov)] hover:text-[var(--text)] transition-colors">
                   <ImageIcon size={18} className="text-green-400" />
                   <span>Upload Image</span>
                 </button>
-                <button className="w-full flex items-center gap-3 px-4 py-2 text-[#b9bbbe] hover:bg-[#40444b] hover:text-white transition-colors">
+                <button onClick={() => triggerUpload('video')} className="w-full flex items-center gap-3 px-4 py-2 text-[var(--text-mut)] hover:bg-[var(--bg-hov)] hover:text-[var(--text)] transition-colors">
                   <Film size={18} className="text-blue-400" />
                   <span>Upload Video</span>
                 </button>
-                <button className="w-full flex items-center gap-3 px-4 py-2 text-[#b9bbbe] hover:bg-[#40444b] hover:text-white transition-colors">
+                <button onClick={() => triggerUpload('file')} className="w-full flex items-center gap-3 px-4 py-2 text-[var(--text-mut)] hover:bg-[var(--bg-hov)] hover:text-[var(--text)] transition-colors">
                   <FileText size={18} className="text-yellow-400" />
                   <span>Upload File</span>
                 </button>
               </div>
             )}
+            <input type="file" ref={fileInputRef} className="hidden" onChange={handleFileUpload} />
           </div>
 
           {/* Input */}
@@ -241,7 +350,7 @@ export default function ChatArea({ activeChat, user }: ChatAreaProps) {
               value={text}
               onChange={(e) => setText(e.target.value)}
               placeholder={`Message @${activeChat.name}`}
-              className="w-full bg-transparent text-[#dcddde] outline-none placeholder-[#72767d]"
+              className="w-full bg-transparent text-[var(--text)] outline-none placeholder-[var(--text-timestamp)]"
             />
 
             <button
@@ -313,6 +422,23 @@ export default function ChatArea({ activeChat, user }: ChatAreaProps) {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Fullscreen Media Modal */}
+      {fullscreenMedia && (
+        <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-[100] p-4" onClick={() => setFullscreenMedia(null)}>
+          <button 
+            className="absolute top-6 right-6 text-[#b9bbbe] hover:text-white transition-colors p-2 bg-black/50 rounded-full"
+            onClick={() => setFullscreenMedia(null)}
+          >
+            <X size={32} />
+          </button>
+          {fullscreenMedia.type === 'image' ? (
+            <img src={fullscreenMedia.url} className="max-w-full max-h-full object-contain" onClick={e => e.stopPropagation()} alt="Fullscreen" />
+          ) : (
+            <video src={fullscreenMedia.url} controls autoPlay className="max-w-full max-h-full" onClick={e => e.stopPropagation()} />
+          )}
         </div>
       )}
     </div>

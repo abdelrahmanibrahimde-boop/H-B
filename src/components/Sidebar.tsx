@@ -81,9 +81,9 @@ export default function Sidebar({ activeChat, setActiveChat, onLogout, user, onO
   };
 
   return (
-    <div className="w-64 bg-[#2f3136] flex flex-col h-full border-r border-[#202225]">
+    <div className="w-64 bg-[var(--bg-sec)] flex flex-col h-full border-r border-[var(--bg-ter)]">
       {/* Top Actions */}
-      <div className="p-4 shadow-md z-10 flex flex-col gap-2 border-b border-[#202225]">
+      <div className="p-4 shadow-md z-10 flex flex-col gap-2 border-b border-[var(--bg-ter)]">
         <button onClick={() => setShowAddFriendModal(true)} className="relative flex items-center justify-center gap-2 w-full bg-[#3ba55c] hover:bg-[#2d7d46] text-white py-2 px-4 rounded transition-colors">
           <UserPlus size={18} />
           <span className="font-medium">Add Friend</span>
@@ -106,7 +106,7 @@ export default function Sidebar({ activeChat, setActiveChat, onLogout, user, onO
           onClick={handleSelfChatClick}
           className={cn(
             "flex items-center gap-3 w-full p-2 rounded transition-colors",
-            activeChat.isSelf ? "bg-[#393c43] text-white" : "text-[#8e9297] hover:bg-[#36393f] hover:text-[#dcddde]"
+            activeChat.isSelf ? "bg-[var(--bg-hov)] text-[var(--text)]" : "text-[var(--text-channels)] hover:bg-[var(--bg)] hover:text-[var(--text)]"
           )}
         >
           <div className="w-8 h-8 rounded-full bg-[#7289da] flex items-center justify-center text-white font-bold overflow-hidden shrink-0">
@@ -117,7 +117,7 @@ export default function Sidebar({ activeChat, setActiveChat, onLogout, user, onO
 
         {/* Freundschaftsanfragen */}
         <div className="pt-4 pb-2 px-2">
-          <div className="text-xs font-bold text-[#8e9297] uppercase tracking-wider mb-2 flex items-center justify-between">
+          <div className="text-xs font-bold text-[var(--text-channels)] uppercase tracking-wider mb-2 flex items-center justify-between">
             <span>Friend Requests</span>
             {requests.length > 0 && <span className="bg-[#ed4245] text-white px-1.5 rounded-full">{requests.length}</span>}
           </div>
@@ -125,8 +125,8 @@ export default function Sidebar({ activeChat, setActiveChat, onLogout, user, onO
             <div className="px-2 text-xs text-[#72767d] italic">No requests</div>
           ) : (
             requests.map((req) => (
-              <div key={req.id} className="flex items-center justify-between p-2 hover:bg-[#40444b] bg-[#292b2f] rounded mb-1 border border-[#202225] shadow-sm transition-colors">
-                <span className="text-sm font-medium text-white truncate mr-2" title={req.fromUsername}>{req.fromUsername}</span>
+              <div key={req.id} className="flex items-center justify-between p-2 hover:bg-[var(--bg-hov)] bg-[var(--bg-ter)] rounded mb-1 border border-[var(--bg-ter)] shadow-sm transition-colors">
+                <span className="text-sm font-medium text-[var(--text)] truncate mr-2" title={req.fromUsername}>{req.fromUsername}</span>
                 <div className="flex gap-2">
                   <button onClick={() => acceptFriendRequest(req.id, user.uid, req.from)} className="bg-[#3ba55c] hover:bg-[#2d7d46] text-white text-xs px-2 py-1 rounded transition-colors shadow-sm">Accept</button>
                   <button onClick={() => rejectFriendRequest(req.id)} className="bg-[#ed4245] hover:bg-[#c13b3e] text-white text-xs px-2 py-1 rounded transition-colors shadow-sm">Reject</button>
@@ -136,7 +136,7 @@ export default function Sidebar({ activeChat, setActiveChat, onLogout, user, onO
           )}
         </div>
 
-        <div className="pt-4 pb-1 px-2 text-xs font-bold text-[#8e9297] uppercase tracking-wider">
+        <div className="pt-4 pb-1 px-2 text-xs font-bold text-[var(--text-channels)] uppercase tracking-wider">
           Direct Messages
         </div>
         {users.length === 0 && (
@@ -149,7 +149,7 @@ export default function Sidebar({ activeChat, setActiveChat, onLogout, user, onO
             onClick={() => handleUserClick(otherUser)}
             className={cn(
               "flex items-center gap-3 w-full p-2 rounded transition-colors",
-              activeChat.name === (otherUser.username || otherUser.name) && !activeChat.isSelf ? "bg-[#393c43] text-white" : "text-[#8e9297] hover:bg-[#36393f] hover:text-[#dcddde]"
+              activeChat.name === (otherUser.username || otherUser.name) && !activeChat.isSelf ? "bg-[var(--bg-hov)] text-[var(--text)]" : "text-[var(--text-channels)] hover:bg-[var(--bg)] hover:text-[var(--text)]"
             )}
           >
             <div className="w-8 h-8 rounded-full bg-[#4f545c] flex items-center justify-center text-white font-bold overflow-hidden shrink-0">
@@ -162,23 +162,23 @@ export default function Sidebar({ activeChat, setActiveChat, onLogout, user, onO
       </div>
 
       {/* User Area / Logout */}
-      <div className="p-4 bg-[#292b2f] flex items-center justify-between border-t border-[#202225]">
+      <div className="p-4 bg-[var(--bg-ter)] flex items-center justify-between border-t border-[var(--bg-ter)]">
         <div 
-          className="flex items-center gap-2 cursor-pointer hover:bg-[#36393f] p-1 -ml-1 rounded transition-colors"
+          className="flex items-center gap-2 cursor-pointer hover:bg-[var(--bg)] p-1 -ml-1 rounded transition-colors"
           onClick={onOpenSettings}
           title="Account Optionen"
         >
-          <div className="w-8 h-8 rounded-full bg-[#202225] flex items-center justify-center text-white font-bold overflow-hidden shrink-0">
+          <div className="w-8 h-8 rounded-full bg-[var(--bg)] flex items-center justify-center text-[var(--text)] font-bold overflow-hidden shrink-0">
             {user.photoURL ? <img src={user.photoURL} alt="Avatar" className="w-full h-full object-cover" /> : user.username[0]?.toUpperCase()}
           </div>
           <div className="flex flex-col">
-            <span className="text-sm font-bold text-white leading-tight">{user.username}</span>
-            <span className="text-xs text-[#b9bbbe] leading-tight hover:underline">Optionen</span>
+            <span className="text-sm font-bold text-[var(--text)] leading-tight">{user.username}</span>
+            <span className="text-xs text-[var(--text-mut)] leading-tight hover:underline">Optionen</span>
           </div>
         </div>
         <button 
           onClick={onLogout}
-          className="text-[#b9bbbe] hover:text-red-400 transition-colors p-2 rounded hover:bg-[#36393f]"
+          className="text-[var(--text-mut)] hover:text-red-400 transition-colors p-2 rounded hover:bg-[var(--bg)]"
           title="Logout"
         >
           <LogOut size={18} />

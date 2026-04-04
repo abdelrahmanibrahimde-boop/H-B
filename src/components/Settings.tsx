@@ -8,6 +8,7 @@ export default function Settings({ user, onClose, onSave }: any) {
   const [username, setUsername] = useState(user.username || '');
   const [email, setEmail] = useState(user.email || '');
   const [birthdate, setBirthdate] = useState(user.birthdate || '');
+  const [theme, setTheme] = useState(user.theme || 'default');
   const [error, setError] = useState('');
   
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -18,6 +19,12 @@ export default function Settings({ user, onClose, onSave }: any) {
   const [isUploading, setIsUploading] = useState(false);
   const [photoURL, setPhotoURL] = useState(user.photoURL || '');
 
+  const handleThemeChange = (newTheme: string) => {
+    setTheme(newTheme);
+    localStorage.setItem('theme', newTheme);
+    document.documentElement.setAttribute('data-theme', newTheme);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
@@ -25,7 +32,7 @@ export default function Settings({ user, onClose, onSave }: any) {
       const userRef = doc(db, 'users', userId);
       const docSnap = await getDoc(userRef);
       
-      const updatedData = { username, email, birthdate };
+      const updatedData = { username, email, birthdate, theme };
       if (docSnap.exists()) {
         await updateDoc(userRef, updatedData);
       } else {
@@ -103,10 +110,10 @@ export default function Settings({ user, onClose, onSave }: any) {
 
   return (
     <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
-      <div className="bg-[#36393f] w-full max-w-md rounded-lg shadow-xl overflow-hidden">
-        <div className="flex justify-between items-center p-6 border-b border-[#202225]">
-          <h2 className="text-xl font-bold text-white">Mein Account</h2>
-          <button onClick={onClose} className="text-[#b9bbbe] hover:text-white transition-colors">
+      <div className="bg-[var(--bg)] w-full max-w-md rounded-lg shadow-xl overflow-hidden border border-[var(--bg-ter)]">
+        <div className="flex justify-between items-center p-6 border-b border-[var(--bg-ter)]">
+          <h2 className="text-xl font-bold text-[var(--text)]">Mein Account</h2>
+          <button onClick={onClose} className="text-[var(--text-mut)] hover:text-[var(--text)] transition-colors">
             <X size={24} />
           </button>
         </div>
@@ -114,19 +121,19 @@ export default function Settings({ user, onClose, onSave }: any) {
         {showDeleteConfirm ? (
           <div className="p-6">
             <h3 className="text-xl font-bold text-[#ed4245] mb-4">Account endgültig löschen</h3>
-            <p className="text-[#b9bbbe] text-sm mb-4">
+            <p className="text-[var(--text-mut)] text-sm mb-4">
               Diese Aktion kann <strong>nicht rückgängig</strong> gemacht werden. Bitte gib dein Passwort ein, um zu bestätigen, dass du deinen Account wirklich löschen möchtest.
             </p>
             <form onSubmit={handleDeleteAccount} className="space-y-4">
               {error && <div className="text-[#ed4245] text-sm font-medium">{error}</div>}
               <div>
-                <label className="block text-[#b9bbbe] text-xs font-bold uppercase mb-2">Passwort</label>
+                <label className="block text-[var(--text-mut)] text-xs font-bold uppercase mb-2">Passwort</label>
                 <input
                   type="password"
                   value={deletePassword}
                   onChange={e => setDeletePassword(e.target.value)}
                   required
-                  className="w-full bg-[#202225] text-white rounded p-3 outline-none focus:ring-2 focus:ring-[#ed4245]"
+                  className="w-full bg-[var(--bg-ter)] text-[var(--text)] rounded p-3 outline-none focus:ring-2 focus:ring-[#ed4245]"
                   autoFocus
                 />
               </div>
@@ -142,13 +149,13 @@ export default function Settings({ user, onClose, onSave }: any) {
           <form onSubmit={handleSubmit} className="p-6 space-y-4">
             <div className="flex flex-col items-center mb-6">
               <div 
-                className="relative w-24 h-24 rounded-full bg-[#2f3136] flex items-center justify-center cursor-pointer group overflow-hidden border-4 border-[#36393f] shadow-lg"
+                className="relative w-24 h-24 rounded-full bg-[var(--bg-sec)] flex items-center justify-center cursor-pointer group overflow-hidden border-4 border-[var(--bg)] shadow-lg"
                 onClick={() => fileInputRef.current?.click()}
               >
                 {photoURL ? (
                   <img src={photoURL} alt="Avatar" className="w-full h-full object-cover group-hover:opacity-30 transition-opacity" />
                 ) : (
-                  <span className="text-3xl font-bold text-white group-hover:opacity-30 transition-opacity">
+                  <span className="text-3xl font-bold text-[var(--text)] group-hover:opacity-30 transition-opacity">
                     {username[0]?.toUpperCase() || '?'}
                   </span>
                 )}
@@ -163,24 +170,33 @@ export default function Settings({ user, onClose, onSave }: any) {
                 accept="image/*" 
                 className="hidden" 
               />
-              <p className="text-xs text-[#b9bbbe] mt-2 font-medium hover:underline cursor-pointer" onClick={() => fileInputRef.current?.click()}>Avatar ändern (max 2MB)</p>
+              <p className="text-xs text-[var(--text-mut)] mt-2 font-medium hover:underline cursor-pointer" onClick={() => fileInputRef.current?.click()}>Avatar ändern (max 2MB)</p>
             </div>
 
             {error && <div className="text-red-500 text-sm font-medium">{error}</div>}
             <div>
-              <label className="block text-[#b9bbbe] text-xs font-bold uppercase mb-2">Username</label>
-              <input type="text" value={username} onChange={e => setUsername(e.target.value)} required className="w-full bg-[#202225] text-white rounded p-3 outline-none focus:ring-2 focus:ring-[#7289da]" />
+              <label className="block text-[var(--text-mut)] text-xs font-bold uppercase mb-2">Username</label>
+              <input type="text" value={username} onChange={e => setUsername(e.target.value)} required className="w-full bg-[var(--bg-ter)] text-[var(--text)] rounded p-3 outline-none focus:ring-2 focus:ring-[#7289da]" />
             </div>
             <div>
-              <label className="block text-[#b9bbbe] text-xs font-bold uppercase mb-2">E-Mail</label>
-              <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="deine@email.de" className="w-full bg-[#202225] text-white rounded p-3 outline-none focus:ring-2 focus:ring-[#7289da]" />
+              <label className="block text-[var(--text-mut)] text-xs font-bold uppercase mb-2">E-Mail</label>
+              <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="deine@email.de" className="w-full bg-[var(--bg-ter)] text-[var(--text)] rounded p-3 outline-none focus:ring-2 focus:ring-[#7289da]" />
             </div>
             <div>
-              <label className="block text-[#b9bbbe] text-xs font-bold uppercase mb-2">Geburtsdatum</label>
-              <input type="date" value={birthdate} onChange={e => setBirthdate(e.target.value)} className="w-full bg-[#202225] text-white rounded p-3 outline-none focus:ring-2 focus:ring-[#7289da]" />
+              <label className="block text-[var(--text-mut)] text-xs font-bold uppercase mb-2">Geburtsdatum</label>
+              <input type="date" value={birthdate} onChange={e => setBirthdate(e.target.value)} className="w-full bg-[var(--bg-ter)] text-[var(--text)] rounded p-3 outline-none focus:ring-2 focus:ring-[#7289da]" />
             </div>
             
-            <div className="pt-4 flex justify-between items-center border-t border-[#202225] mt-4 pt-6">
+            <div>
+              <label className="block text-[var(--text-mut)] text-xs font-bold uppercase mb-2">App Theme</label>
+              <select value={theme} onChange={e => handleThemeChange(e.target.value)} className="w-full bg-[var(--bg-ter)] text-[var(--text)] rounded p-3 outline-none focus:ring-2 focus:ring-[#7289da]">
+                <option value="default">Default (Dark)</option>
+                <option value="dark">Midnight Dark</option>
+                <option value="light">Light Mode</option>
+              </select>
+            </div>
+            
+            <div className="pt-4 flex justify-between items-center border-t border-[var(--bg-ter)] mt-4 pt-6">
               <button type="button" onClick={() => { setShowDeleteConfirm(true); setError(''); }} className="text-[#ed4245] hover:underline text-sm font-medium transition-colors">Account löschen</button>
               <div className="flex gap-3">
                 <button type="button" onClick={onClose} className="px-4 py-2 text-white hover:underline">Abbrechen</button>
