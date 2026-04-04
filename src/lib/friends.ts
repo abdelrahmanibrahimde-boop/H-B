@@ -11,7 +11,7 @@ export const sendFriendRequest = async (
 
   // Ziel-Nutzer anhand des Namens suchen
   const usersRef = collection(db, 'users');
-  const qUser = query(usersRef, where('username', '==', targetUsername));
+  const qUser = query(usersRef, where('usernameLower', '==', targetUsername.toLowerCase()));
   const userSnap = await getDocs(qUser);
   
   if (userSnap.empty) throw new Error("Benutzer nicht gefunden.");
