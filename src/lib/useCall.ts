@@ -67,6 +67,9 @@ export function useCall(currentUserId: string, onIncomingCall?: (callId: string,
       pc.addTrack(track, stream);
     });
 
+    // Initialize video transceiver so screen share can replace track without renegotiation
+    pc.addTransceiver('video', { direction: 'sendrecv', streams: [stream] });
+
     pc.ontrack = (event) => {
       setRemoteStream(event.streams[0]);
     };
@@ -203,16 +206,17 @@ export function useCall(currentUserId: string, onIncomingCall?: (callId: string,
       // Stop sharing
       if (screenTrackRef.current) {
         screenTrackRef.current.stop();
-        const transceiver = pcRef.current.getTransceivers().find(t => t.sender.track === screenTrackRef.current);
-        if (transceiver) {
+        const sender = pcRef.current.getSenders().find(s => s.track?.kind === 'video' || s.track === screenTrackRef.current);
+        if (sender) {
           try {
-            await transceiver.sender.replaceTrack(null);
+            await sender.replaceTrack(null);
           } catch (e) {
-            pcRef.current.removeTrack(transceiver.sender);
+            console.error(e);
           }
         }
         if (localStream) {
           localStream.removeTrack(screenTrackRef.current);
+          setLocalStream(new MediaStream(localStream.getAudioTracks()));
         }
         screenTrackRef.current = null;
       }
@@ -220,36 +224,44 @@ export function useCall(currentUserId: string, onIncomingCall?: (callId: string,
     } else {
       // Start sharing
       try {
-        const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+        const screenStream = await navigator.mediaDevices.getDisplayMedia({
+          video: true,
+          audio: false
+        });
         const videoTrack = screenStream.getVideoTracks()[0];
 
         videoTrack.onended = async () => {
           // Handle browser UI "Stop sharing" button
           if (screenTrackRef.current) {
-            const transceiver = pcRef.current?.getTransceivers().find(t => t.sender.track === screenTrackRef.current);
-            if (transceiver && pcRef.current) {
+            const sender = pcRef.current?.getSenders().find(s => s.track?.kind === 'video' || s.track === screenTrackRef.current);
+            if (sender) {
               try {
-                await transceiver.sender.replaceTrack(null);
+                await sender.replaceTrack(null);
               } catch (e) {
-                pcRef.current.removeTrack(transceiver.sender);
+                console.error(e);
               }
             }
-            if (localStream) localStream.removeTrack(screenTrackRef.current);
+            if (localStream) {
+              localStream.removeTrack(screenTrackRef.current);
+              setLocalStream(new MediaStream(localStream.getAudioTracks()));
+            }
             screenTrackRef.current = null;
           }
           setIsScreenSharing(false);
         };
 
-        const transceiver = pcRef.current.getTransceivers().find(t => t.sender.track?.kind === 'video' || t.receiver.track?.kind === 'video');
-        if (transceiver) {
-          await transceiver.sender.replaceTrack(videoTrack);
+        const sender = pcRef.current.getSenders().find(s => s.track?.kind === 'video' || s.track === null);
+        if (sender) {
+          await sender.replaceTrack(videoTrack);
         } else {
           pcRef.current.addTrack(videoTrack, localStream!);
         }
 
-        if (localStream) {
-          localStream.addTrack(videoTrack);
-        }
+        const combinedStream = new MediaStream([
+          ...(localStream ? localStream.getAudioTracks() : []),
+          videoTrack
+        ]);
+        setLocalStream(combinedStream);
         screenTrackRef.current = videoTrack;
         setIsScreenSharing(true);
       } catch (error) {
