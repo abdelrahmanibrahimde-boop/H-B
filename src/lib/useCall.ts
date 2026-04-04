@@ -23,6 +23,7 @@ export function useCall(currentUserId: string, onIncomingCall?: (callId: string,
 
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const callIdRef = useRef<string | null>(null);
+  const incomingCallIdRef = useRef<string | null>(null);
   const unsubscribers = useRef<(() => void)[]>([]);
 
   const cleanupListeners = () => {
@@ -68,6 +69,7 @@ export function useCall(currentUserId: string, onIncomingCall?: (callId: string,
     setCallStatus('idle');
     setIncomingCall(null);
     callIdRef.current = null;
+    incomingCallIdRef.current = null;
   };
 
   // 💡 LOGIK A: Reaktion auf Remote-Auflegen (Listener & Fallbacks)
@@ -88,32 +90,43 @@ export function useCall(currentUserId: string, onIncomingCall?: (callId: string,
     if (!currentUserId) return;
 
     const callsRef = collection(db, 'calls');
+    // 💡 LÖSUNG PROBLEM 3: "status == calling" entfernt, um den Composite-Index zu umgehen. 
+    // Die Filterung passiert nun absolut zuverlässig lokal im Listener!
     const q = query(
       callsRef,
-      where('receiverId', '==', currentUserId),
-      where('status', '==', 'calling')
+      where('receiverId', '==', currentUserId)
     );
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
       snapshot.docChanges().forEach((change) => {
-        if (change.type === 'added') {
-          const data = change.doc.data();
-          setIncomingCall({ callId: change.doc.id, callerId: data.callerId });
-          setRemoteUid(data.callerId);
-          setCallStatus('ringing');
-          
-          // Trigger UI callback
-          if (onIncomingCall) {
-            onIncomingCall(change.doc.id, data.callerId);
-          }
-        }
-          if (change.type === 'removed' || change.type === 'modified') {
-            const data = change.doc.data();
-            if (!data || data.status === 'ended') {
+        const data = change.doc.data();
+        if (!data) return;
+
+        if (change.type === 'added' || change.type === 'modified') {
+          if (data.status === 'calling' && callIdRef.current !== change.doc.id) {
+            setIncomingCall({ callId: change.doc.id, callerId: data.callerId });
+            incomingCallIdRef.current = change.doc.id;
+            setRemoteUid(data.callerId);
+            setCallStatus('ringing');
+            
+            if (onIncomingCall) {
+              onIncomingCall(change.doc.id, data.callerId);
+            }
+          } else if (data.status === 'ended') {
+            if (callIdRef.current === change.doc.id || incomingCallIdRef.current === change.doc.id) {
               handleRemoteEnd();
             }
           }
+        }
+        
+        if (change.type === 'removed') {
+          if (callIdRef.current === change.doc.id || incomingCallIdRef.current === change.doc.id) {
+            handleRemoteEnd();
+          }
+        }
       });
+    }, (error) => {
+      console.error("Fehler im Anruf-Listener:", error);
     });
 
     return () => unsubscribe();
@@ -234,9 +247,30 @@ export function useCall(currentUserId: string, onIncomingCall?: (callId: string,
       const callDoc = doc(collection(db, 'calls'));
       callIdRef.current = callDoc.id;
       setRemoteUid(receiverId);
-      const { pc } = await setupMediaAndPC(callDoc, true);
 
       setCallStatus('calling');
+
+      // 💡 LÖSUNG PROBLEM 1: Listener sofort starten, BEVOR Signalisierung und setDoc laufen!
+      // So bekommen wir ein Reject in Millisekunden mit, selbst wenn der User extrem schnell war.
+      const unsubCallDoc = onSnapshot(callDoc, async (snapshot) => {
+        const data = snapshot.data();
+        if (!data || data.status === 'ended') {
+          handleRemoteEnd();
+          return;
+        }
+        
+        if (data?.answer && pcRef.current?.signalingState === 'have-local-offer' && pcRef.current.currentRemoteDescription?.sdp !== data.answer.sdp) {
+          const answerDescription = new RTCSessionDescription(data.answer);
+          await pcRef.current.setRemoteDescription(answerDescription);
+        }
+
+        if (data?.status === 'connected') {
+          setCallStatus('connected');
+        }
+      });
+      unsubscribers.current.push(unsubCallDoc);
+
+      const { pc } = await setupMediaAndPC(callDoc, true);
 
       const offerDescription = await pc.createOffer();
       await pc.setLocalDescription(offerDescription);
@@ -253,28 +287,9 @@ export function useCall(currentUserId: string, onIncomingCall?: (callId: string,
         status: 'calling',
       });
 
-      // 4. listenForAnswer (caller side)
-      const unsubCallDoc = onSnapshot(callDoc, async (snapshot) => {
-        const data = snapshot.data();
-        if (!data || data.status === 'ended') {
-          handleRemoteEnd();
-          return;
-        }
-        
-        if (data?.answer && pc.signalingState === 'have-local-offer' && pc.currentRemoteDescription?.sdp !== data.answer.sdp) {
-          const answerDescription = new RTCSessionDescription(data.answer);
-          await pc.setRemoteDescription(answerDescription);
-        }
-
-        if (data?.status === 'connected') {
-          setCallStatus('connected');
-        }
-      });
-      unsubscribers.current.push(unsubCallDoc);
     } catch (error) {
       console.error('Error creating call:', error);
-      setCallStatus('idle');
-      cleanupListeners();
+      handleRemoteEnd();
     }
   };
 
