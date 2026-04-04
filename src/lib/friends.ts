@@ -11,25 +11,45 @@ export const sendFriendRequest = async (
 
   // Ziel-Nutzer anhand des Namens suchen
   const usersRef = collection(db, 'users');
-  const qUser = query(usersRef, where('username', '==', targetUsername));
+  const qUser = query(usersRef, where('usernameLower', '==', targetUsername.toLowerCase()));
   const userSnap = await getDocs(qUser);
   
   if (userSnap.empty) throw new Error("Benutzer nicht gefunden.");
 
   const targetUser = userSnap.docs[0].data();
 
+  // Debug-Logs zur Kontrolle der zugewiesenen IDs
+  console.log(`[FriendRequest] Absender ID (currentUserId): ${currentUserId}`);
+  console.log(`[FriendRequest] Ziel ID (targetUser.uid): ${targetUser.uid}`);
+
   if (currentFriends.includes(targetUser.uid)) throw new Error("Ihr seid bereits befreundet.");
 
-  // Prüfen, ob bereits eine Anfrage gesendet wurde
   const reqRef = collection(db, 'friendRequests');
-  const qReq = query(reqRef, where('from', '==', currentUserId), where('to', '==', targetUser.uid));
-  const reqSnap = await getDocs(qReq);
-  if (!reqSnap.empty) throw new Error("Anfrage wurde bereits gesendet.");
+  
+  // 1. Check if the current user already sent a request to the target
+  try {
+    const qReq = query(reqRef, where('from', '==', currentUserId), where('to', '==', targetUser.uid));
+    const reqSnap = await getDocs(qReq);
+    if (!reqSnap.empty) {
+      throw new Error("Anfrage wurde bereits gesendet.");
+    }
+  } catch (error: any) {
+    // Wenn hier ein Fehler fliegt, liegt das sehr oft an einem fehlenden Composite Index in Firebase.
+    console.error("Fehler beim Prüfen der gesendeten Anfrage (Fehlt evtl. der Index?):", error);
+    throw error;
+  }
 
-  // Prüfen, ob der andere Nutzer uns schon angefragt hat
-  const reverseReq = query(reqRef, where('from', '==', targetUser.uid), where('to', '==', currentUserId));
-  const reverseSnap = await getDocs(reverseReq);
-  if (!reverseSnap.empty) throw new Error("Dieser Benutzer hat dir bereits eine Anfrage gesendet.");
+  // 2. Check if the target user already sent a request to the current user (Reverse case)
+  try {
+    const reverseReq = query(reqRef, where('from', '==', targetUser.uid), where('to', '==', currentUserId));
+    const reverseSnap = await getDocs(reverseReq);
+    if (!reverseSnap.empty) {
+      throw new Error("Dieser Benutzer hat dir bereits eine Anfrage gesendet.");
+    }
+  } catch (error: any) {
+    console.error("Fehler beim Prüfen der erhaltenen Anfrage (Fehlt evtl. der Index?):", error);
+    throw error;
+  }
 
   await addDoc(reqRef, {
     from: currentUserId,

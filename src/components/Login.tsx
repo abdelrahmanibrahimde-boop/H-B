@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { cn } from '@/lib/utils';
 import { auth, db } from '../firebase';
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
-import { doc, setDoc, getDoc } from 'firebase/firestore';
+import { doc, setDoc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
 
 interface LoginProps {
   onLogin: (user: any) => void;
@@ -25,8 +25,16 @@ export default function Login({ onLogin }: LoginProps) {
 
     try {
       if (isSignUp) {
+        // Prüfen, ob der Username bereits vergeben ist (case-insensitive)
+        const usernameLower = username.trim().toLowerCase();
+        const q = query(collection(db, 'users'), where('usernameLower', '==', usernameLower));
+        const querySnapshot = await getDocs(q);
+        if (!querySnapshot.empty) {
+          throw new Error("Dieser Username ist bereits vergeben.");
+        }
+
         const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-        const newUser = { uid: userCredential.user.uid, id: userCredential.user.uid, username, email, birthdate: '', friends: [], theme: 'default' };
+        const newUser = { uid: userCredential.user.uid, id: userCredential.user.uid, username: username.trim(), usernameLower, email, birthdate: '', friends: [], theme: 'default' };
         await setDoc(doc(db, 'users', userCredential.user.uid), newUser);
         localStorage.setItem('theme', 'default');
         document.documentElement.setAttribute('data-theme', 'default');
