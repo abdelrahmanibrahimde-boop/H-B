@@ -54,7 +54,7 @@ export default function CallOverlay({
 
   // Prevent duplicating the current user if calling oneself
   const currentUserId = currentUser.uid;
-  const remoteUserId = activeChat.members?.find((id: string) => id !== currentUserId) || activeChat.id.split("_").find((id: string) => id !== currentUserId);
+  const remoteUserId = activeChat.members?.find((id: string) => id !== currentUserId);
   const displayRemoteName = activeChat.userData?.[remoteUserId]?.username || activeChat.name || "Remote User";
   const displayRemotePhoto = activeChat.userData?.[remoteUserId]?.photoURL || activeChat.photoURL || null;
 
@@ -126,7 +126,7 @@ export default function CallOverlay({
   }, [callStatus, localStream, remoteStream]);
 
   useEffect(() => {
-    if (!audioRef.current) return;
+    if (!audioRef.current || !remoteStream) return;
 
     audioRef.current.srcObject = remoteStream;
     audioRef.current.play().catch(() => {});

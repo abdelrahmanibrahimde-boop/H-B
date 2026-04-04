@@ -74,10 +74,7 @@ export function useCall(currentUserId: string, onIncomingCall?: (callId: string,
       console.log("TRACK:", track.kind, track.contentHint);
 
       if (track.kind === "audio") {
-        console.log("AUDIO TRACK RECEIVED:", track.id);
-        const stream = new MediaStream();
-        stream.addTrack(track);
-        
+        const stream = new MediaStream([track]);
         setRemoteStream(stream);
         return;
       }
@@ -174,17 +171,13 @@ export function useCall(currentUserId: string, onIncomingCall?: (callId: string,
           return;
         }
         
-        if (data?.offer && pc.signalingState === 'stable' && pc.remoteDescription?.sdp !== data.offer.sdp) {
-          await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
-          const answer = await pc.createAnswer();
-          await pc.setLocalDescription(answer);
-          await updateDoc(callDoc, { answer: { type: answer.type, sdp: answer.sdp } });
-        }
-
         if (data?.answer && pc.signalingState === 'have-local-offer' && pc.currentRemoteDescription?.sdp !== data.answer.sdp) {
           const answerDescription = new RTCSessionDescription(data.answer);
           await pc.setRemoteDescription(answerDescription);
-          if (callStatus !== 'connected') setCallStatus('connected');
+        }
+
+        if (data?.status === 'connected') {
+          setCallStatus('connected');
         }
       });
       unsubscribers.current.push(unsubCallDoc);
@@ -233,11 +226,6 @@ export function useCall(currentUserId: string, onIncomingCall?: (callId: string,
           const answer = await pc.createAnswer();
           await pc.setLocalDescription(answer);
           await updateDoc(callDoc, { answer: { type: answer.type, sdp: answer.sdp } });
-        }
-
-        if (data?.answer && pc.signalingState === 'have-local-offer' && pc.currentRemoteDescription?.sdp !== data.answer.sdp) {
-          const answerDescription = new RTCSessionDescription(data.answer);
-          await pc.setRemoteDescription(answerDescription);
         }
       });
       unsubscribers.current.push(unsubCallDoc);
