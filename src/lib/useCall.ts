@@ -74,20 +74,11 @@ export function useCall(currentUserId: string, onIncomingCall?: (callId: string,
       console.log("TRACK:", track.kind, track.contentHint);
 
       if (track.kind === "audio") {
-        setRemoteStream(prev => {
-          const newStream = new MediaStream();
-      
-          if (prev) {
-            prev.getTracks().forEach(t => newStream.addTrack(t));
-          }
-      
-          const exists = newStream.getTracks().some(t => t.id === track.id);
-          if (!exists) {
-            newStream.addTrack(track);
-          }
-          return newStream;
-        });
-
+        console.log("AUDIO TRACK RECEIVED:", track.id);
+        const stream = new MediaStream();
+        stream.addTrack(track);
+        
+        setRemoteStream(stream);
         return;
       }
       

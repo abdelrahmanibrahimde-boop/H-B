@@ -128,13 +128,8 @@ export default function CallOverlay({
   useEffect(() => {
     if (!audioRef.current) return;
 
-    const stream = new MediaStream();
-
-    if (remoteStream) {
-      remoteStream.getAudioTracks().forEach(t => stream.addTrack(t));
-    }
-
-    audioRef.current.srcObject = stream;
+    audioRef.current.srcObject = remoteStream;
+    audioRef.current.play().catch(() => {});
   }, [remoteStream]);
 
   useEffect(() => {
@@ -206,7 +201,7 @@ export default function CallOverlay({
     <>
       <div className={`absolute inset-0 bg-[#1e1f22] z-50 flex flex-col transition-opacity duration-200 ${isMinimized ? 'opacity-0 pointer-events-none hidden' : 'opacity-100'}`}>
         {/* Remote Audio */}
-        <audio ref={audioRef} autoPlay className="hidden" />
+        <audio ref={audioRef} autoPlay playsInline className="hidden" />
 
         {/* 1. Header Bar */}
         <div className="h-16 bg-[#2b2d31] flex items-center justify-between px-6 border-b border-[#1e1f22] shadow-sm shrink-0">
