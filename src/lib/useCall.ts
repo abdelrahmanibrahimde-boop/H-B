@@ -13,14 +13,16 @@ const servers = {
 export function useCall(currentUserId: string, onIncomingCall?: (callId: string, callerId: string) => void) {
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
+  const [localStreams, setLocalStreams] = useState<{ camera: MediaStream | null, screen: MediaStream | null }>({ camera: null, screen: null });
+  const [remoteStreams, setRemoteStreams] = useState<{ camera: MediaStream | null, screen: MediaStream | null }>({ camera: null, screen: null });
   const [incomingCall, setIncomingCall] = useState<{ callId: string; callerId: string } | null>(null);
   const [callStatus, setCallStatus] = useState<'idle' | 'calling' | 'ringing' | 'connected'>('idle');
   const [isScreenSharing, setIsScreenSharing] = useState(false);
+  const [isCameraOn, setIsCameraOn] = useState(false);
 
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const callIdRef = useRef<string | null>(null);
   const unsubscribers = useRef<(() => void)[]>([]);
-  const screenTrackRef = useRef<MediaStreamTrack | null>(null);
 
   const cleanupListeners = () => {
     unsubscribers.current.forEach((unsub) => unsub());
@@ -67,11 +69,29 @@ export function useCall(currentUserId: string, onIncomingCall?: (callId: string,
       pc.addTrack(track, stream);
     });
 
-    // Initialize video transceiver so screen share can replace track without renegotiation
-    pc.addTransceiver('video', { direction: 'sendrecv', streams: [stream] });
-
     pc.ontrack = (event) => {
-      setRemoteStream(event.streams[0]);
+      const track = event.track;
+
+      if (track.kind === "video") {
+        if (track.label.includes("screen") || event.streams[0]?.id.includes("screen")) {
+          setRemoteStreams(prev => ({ ...prev, screen: event.streams[0] }));
+        } else {
+          setRemoteStreams(prev => ({ ...prev, camera: event.streams[0] }));
+        }
+      } else {
+        setRemoteStream(event.streams[0]);
+      }
+    };
+
+    pc.onnegotiationneeded = async () => {
+      try {
+        if (pc.signalingState !== 'stable') return;
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        await updateDoc(callDoc, { offer: { sdp: offer.sdp, type: offer.type } });
+      } catch (error) {
+        console.error('Error during renegotiation:', error);
+      }
     };
 
     // 5. ICE candidates exchange
@@ -127,16 +147,24 @@ export function useCall(currentUserId: string, onIncomingCall?: (callId: string,
       });
 
       // 4. listenForAnswer (caller side)
-      const unsubCallDoc = onSnapshot(callDoc, (snapshot) => {
+      const unsubCallDoc = onSnapshot(callDoc, async (snapshot) => {
         const data = snapshot.data();
         if (data?.status === 'ended') {
           endCall();
           return;
         }
-        if (!pc.currentRemoteDescription && data?.answer) {
+        
+        if (data?.offer && pc.signalingState === 'stable' && pc.remoteDescription?.sdp !== data.offer.sdp) {
+          await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
+          const answer = await pc.createAnswer();
+          await pc.setLocalDescription(answer);
+          await updateDoc(callDoc, { answer: { type: answer.type, sdp: answer.sdp } });
+        }
+
+        if (data?.answer && pc.signalingState === 'have-local-offer' && pc.currentRemoteDescription?.sdp !== data.answer.sdp) {
           const answerDescription = new RTCSessionDescription(data.answer);
-          pc.setRemoteDescription(answerDescription);
-          setCallStatus('connected');
+          await pc.setRemoteDescription(answerDescription);
+          if (callStatus !== 'connected') setCallStatus('connected');
         }
       });
       unsubscribers.current.push(unsubCallDoc);
@@ -173,9 +201,23 @@ export function useCall(currentUserId: string, onIncomingCall?: (callId: string,
         status: 'connected',
       });
 
-      const unsubCallDoc = onSnapshot(callDoc, (snapshot) => {
-        if (snapshot.data()?.status === 'ended') {
+      const unsubCallDoc = onSnapshot(callDoc, async (snapshot) => {
+        const data = snapshot.data();
+        if (data?.status === 'ended') {
           endCall();
+          return;
+        }
+        
+        if (data?.offer && pc.signalingState === 'stable' && pc.remoteDescription?.sdp !== data.offer.sdp) {
+          await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
+          const answer = await pc.createAnswer();
+          await pc.setLocalDescription(answer);
+          await updateDoc(callDoc, { answer: { type: answer.type, sdp: answer.sdp } });
+        }
+
+        if (data?.answer && pc.signalingState === 'have-local-offer' && pc.currentRemoteDescription?.sdp !== data.answer.sdp) {
+          const answerDescription = new RTCSessionDescription(data.answer);
+          await pc.setRemoteDescription(answerDescription);
         }
       });
       unsubscribers.current.push(unsubCallDoc);
@@ -199,70 +241,60 @@ export function useCall(currentUserId: string, onIncomingCall?: (callId: string,
     setCallStatus('idle');
   };
 
+  const toggleCamera = async () => {
+    if (!pcRef.current) return;
+
+    if (isCameraOn) {
+      if (localStreams.camera) {
+        localStreams.camera.getTracks().forEach(t => t.stop());
+        const sender = pcRef.current.getSenders().find(s => s.track === localStreams.camera?.getVideoTracks()[0]);
+        if (sender) pcRef.current.removeTrack(sender);
+        setLocalStreams(prev => ({ ...prev, camera: null }));
+      }
+      setIsCameraOn(false);
+    } else {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        const track = stream.getVideoTracks()[0];
+        
+        Object.defineProperty(track, 'label', { value: 'camera', writable: true });
+        
+        pcRef.current.addTrack(track, stream);
+        setLocalStreams(prev => ({ ...prev, camera: stream }));
+        setIsCameraOn(true);
+      } catch (error) {
+        console.error('Error starting camera:', error);
+      }
+    }
+  };
+
   const toggleScreenShare = async () => {
     if (!pcRef.current) return;
 
     if (isScreenSharing) {
-      // Stop sharing
-      if (screenTrackRef.current) {
-        screenTrackRef.current.stop();
-        const sender = pcRef.current.getSenders().find(s => s.track?.kind === 'video' || s.track === screenTrackRef.current);
-        if (sender) {
-          try {
-            await sender.replaceTrack(null);
-          } catch (e) {
-            console.error(e);
-          }
-        }
-        if (localStream) {
-          localStream.removeTrack(screenTrackRef.current);
-          setLocalStream(new MediaStream(localStream.getAudioTracks()));
-        }
-        screenTrackRef.current = null;
+      if (localStreams.screen) {
+        localStreams.screen.getTracks().forEach(t => t.stop());
+        const sender = pcRef.current.getSenders().find(s => s.track === localStreams.screen?.getVideoTracks()[0]);
+        if (sender) pcRef.current.removeTrack(sender);
+        setLocalStreams(prev => ({ ...prev, screen: null }));
       }
       setIsScreenSharing(false);
     } else {
-      // Start sharing
       try {
-        const screenStream = await navigator.mediaDevices.getDisplayMedia({
-          video: true,
-          audio: false
-        });
-        const videoTrack = screenStream.getVideoTracks()[0];
+        const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+        const track = stream.getVideoTracks()[0];
+        
+        Object.defineProperty(track, 'label', { value: 'screen', writable: true });
 
-        videoTrack.onended = async () => {
-          // Handle browser UI "Stop sharing" button
-          if (screenTrackRef.current) {
-            const sender = pcRef.current?.getSenders().find(s => s.track?.kind === 'video' || s.track === screenTrackRef.current);
-            if (sender) {
-              try {
-                await sender.replaceTrack(null);
-              } catch (e) {
-                console.error(e);
-              }
-            }
-            if (localStream) {
-              localStream.removeTrack(screenTrackRef.current);
-              setLocalStream(new MediaStream(localStream.getAudioTracks()));
-            }
-            screenTrackRef.current = null;
-          }
+        track.onended = () => {
+          const sender = pcRef.current?.getSenders().find(s => s.track === track);
+          if (sender && pcRef.current) pcRef.current.removeTrack(sender);
+          setLocalStreams(prev => ({ ...prev, screen: null }));
           setIsScreenSharing(false);
         };
 
-        const sender = pcRef.current.getSenders().find(s => s.track?.kind === 'video' || s.track === null);
-        if (sender) {
-          await sender.replaceTrack(videoTrack);
-        } else {
-          pcRef.current.addTrack(videoTrack, localStream!);
-        }
-
-        const combinedStream = new MediaStream([
-          ...(localStream ? localStream.getAudioTracks() : []),
-          videoTrack
-        ]);
-        setLocalStream(combinedStream);
-        screenTrackRef.current = videoTrack;
+        pcRef.current.addTrack(track, stream);
+        setLocalStreams(prev => ({ ...prev, screen: stream }));
         setIsScreenSharing(true);
       } catch (error) {
         console.error('Error starting screen share:', error);
@@ -281,12 +313,13 @@ export function useCall(currentUserId: string, onIncomingCall?: (callId: string,
 
     cleanupListeners();
 
-    // Cleanup screen track
-    if (screenTrackRef.current) {
-      screenTrackRef.current.stop();
-      screenTrackRef.current = null;
-    }
+    if (localStreams.camera) localStreams.camera.getTracks().forEach(t => t.stop());
+    if (localStreams.screen) localStreams.screen.getTracks().forEach(t => t.stop());
+    
+    setLocalStreams({ camera: null, screen: null });
+    setRemoteStreams({ camera: null, screen: null });
     setIsScreenSharing(false);
+    setIsCameraOn(false);
 
     if (pcRef.current) {
       pcRef.current.close();
@@ -322,9 +355,13 @@ export function useCall(currentUserId: string, onIncomingCall?: (callId: string,
     endCall,
     localStream,
     remoteStream,
+    localStreams,
+    remoteStreams,
     incomingCall,
     callStatus,
     isScreenSharing,
     toggleScreenShare,
+    isCameraOn,
+    toggleCamera,
   };
 }

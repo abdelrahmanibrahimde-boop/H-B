@@ -9,10 +9,14 @@ interface CallOverlayProps {
   endCall: () => void;
   localStream: MediaStream | null;
   remoteStream: MediaStream | null;
+  localStreams: { camera: MediaStream | null, screen: MediaStream | null };
+  remoteStreams: { camera: MediaStream | null, screen: MediaStream | null };
   currentUser: any;
   activeChat: any;
   isScreenSharing: boolean;
   toggleScreenShare: () => void;
+  isCameraOn: boolean;
+  toggleCamera: () => void;
 }
 
 export default function CallOverlay({
@@ -23,21 +27,26 @@ export default function CallOverlay({
   endCall,
   localStream,
   remoteStream,
+  localStreams,
+  remoteStreams,
   currentUser,
   activeChat,
   isScreenSharing,
   toggleScreenShare,
+  isCameraOn,
+  toggleCamera,
 }: CallOverlayProps) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const localAvatarRef = useRef<HTMLDivElement>(null);
   const remoteAvatarRef = useRef<HTMLDivElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
   const localVideoRef = useRef<HTMLVideoElement>(null);
+  const remoteScreenRef = useRef<HTMLVideoElement>(null);
+  const localScreenRef = useRef<HTMLVideoElement>(null);
 
   const [isMuted, setIsMuted] = useState(false);
   const [isDeafened, setIsDeafened] = useState(false);
   const [duration, setDuration] = useState(0);
-  const [remoteVideoId, setRemoteVideoId] = useState<string | null>(null);
   const [isMinimized, setIsMinimized] = useState(false);
 
   const isMutedRef = useRef(isMuted);
@@ -122,34 +131,29 @@ export default function CallOverlay({
     }
   }, [isDeafened]);
 
-  // Detect Remote Video Track additions gracefully
   useEffect(() => {
-    if (!remoteStream) return;
-    const updateVideoState = () => {
-      const videoTrack = remoteStream.getVideoTracks()[0];
-      setRemoteVideoId(videoTrack ? videoTrack.id : null);
-    };
-    
-    updateVideoState();
-    remoteStream.addEventListener('addtrack', updateVideoState);
-    remoteStream.addEventListener('removetrack', updateVideoState);
-    return () => {
-      remoteStream.removeEventListener('addtrack', updateVideoState);
-      remoteStream.removeEventListener('removetrack', updateVideoState);
-    };
-  }, [remoteStream]);
+    if (remoteVideoRef.current && remoteStreams.camera) {
+      remoteVideoRef.current.srcObject = remoteStreams.camera;
+    }
+  }, [remoteStreams.camera]);
 
   useEffect(() => {
-    if (remoteVideoRef.current && remoteStream && remoteVideoId) {
-      remoteVideoRef.current.srcObject = remoteStream;
+    if (remoteScreenRef.current && remoteStreams.screen) {
+      remoteScreenRef.current.srcObject = remoteStreams.screen;
     }
-  }, [remoteStream, remoteVideoId]);
+  }, [remoteStreams.screen]);
 
   useEffect(() => {
-    if (localVideoRef.current && localStream && isScreenSharing) {
-      localVideoRef.current.srcObject = localStream;
+    if (localVideoRef.current && localStreams.camera) {
+      localVideoRef.current.srcObject = localStreams.camera;
     }
-  }, [localStream, isScreenSharing]);
+  }, [localStreams.camera]);
+
+  useEffect(() => {
+    if (localScreenRef.current && localStreams.screen) {
+      localScreenRef.current.srcObject = localStreams.screen;
+    }
+  }, [localStreams.screen]);
 
   const toggleMute = () => {
     if (localStream) {
@@ -215,11 +219,36 @@ export default function CallOverlay({
 
       {/* 2. Center UI */}
       <div className="flex-1 flex flex-col items-center justify-center bg-[#1e1f22] p-8">
+        
+        {/* Screen Share Area */}
+        {(localStreams.screen || remoteStreams.screen) && (
+          <div className="flex gap-6 mb-8 w-full max-w-6xl justify-center">
+            {localStreams.screen && (
+              <div className="relative group flex-1">
+                <video ref={localScreenRef} onDoubleClick={() => toggleFullscreen(localScreenRef)} autoPlay playsInline muted className="w-full aspect-video bg-black rounded-lg object-cover border border-[#2b2d31] shadow-lg cursor-pointer" />
+                <span className="absolute bottom-3 left-3 bg-black/70 text-white text-xs px-2 py-1 rounded">Dein Bildschirm</span>
+                <button onClick={() => toggleFullscreen(localScreenRef)} className="absolute top-3 right-3 bg-black/70 hover:bg-black/90 text-[#b9bbbe] hover:text-white p-1.5 rounded opacity-0 group-hover:opacity-100 transition-opacity z-10" title="Fullscreen">
+                  <Maximize size={16} />
+                </button>
+              </div>
+            )}
+            {remoteStreams.screen && (
+              <div className="relative group flex-1">
+                <video ref={remoteScreenRef} onDoubleClick={() => toggleFullscreen(remoteScreenRef)} autoPlay playsInline className="w-full aspect-video bg-black rounded-lg object-cover border border-[#2b2d31] shadow-lg cursor-pointer" />
+                <span className="absolute bottom-3 left-3 bg-black/70 text-white text-xs px-2 py-1 rounded">{activeChat.name}'s Bildschirm</span>
+                <button onClick={() => toggleFullscreen(remoteScreenRef)} className="absolute top-3 right-3 bg-black/70 hover:bg-black/90 text-[#b9bbbe] hover:text-white p-1.5 rounded opacity-0 group-hover:opacity-100 transition-opacity z-10" title="Fullscreen">
+                  <Maximize size={16} />
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="flex items-center gap-16 mb-8">
           <div className="flex flex-col items-center gap-4">
-            {isScreenSharing ? (
+            {localStreams.camera ? (
               <div className="relative group">
-                <video ref={localVideoRef} onDoubleClick={() => toggleFullscreen(localVideoRef)} autoPlay playsInline muted className="w-80 aspect-video bg-black rounded-lg object-cover border border-[#2b2d31] shadow-lg cursor-pointer" />
+                <video ref={localVideoRef} onDoubleClick={() => toggleFullscreen(localVideoRef)} autoPlay playsInline muted className="w-64 aspect-video bg-black rounded-lg object-cover border border-[#2b2d31] shadow-lg cursor-pointer" />
                 <button onClick={() => toggleFullscreen(localVideoRef)} className="absolute top-2 right-2 bg-black/60 hover:bg-black/80 text-[#b9bbbe] hover:text-white p-1.5 rounded opacity-0 group-hover:opacity-100 transition-opacity z-10" title="Fullscreen">
                   <Maximize size={16} />
                 </button>
@@ -243,9 +272,9 @@ export default function CallOverlay({
           </div>
 
           <div className="flex flex-col items-center gap-4">
-            {remoteVideoId ? (
+            {remoteStreams.camera ? (
               <div className="relative group">
-                <video ref={remoteVideoRef} onDoubleClick={() => toggleFullscreen(remoteVideoRef)} autoPlay playsInline className="w-80 aspect-video bg-black rounded-lg object-cover border border-[#2b2d31] shadow-lg cursor-pointer" />
+                <video ref={remoteVideoRef} onDoubleClick={() => toggleFullscreen(remoteVideoRef)} autoPlay playsInline className="w-64 aspect-video bg-black rounded-lg object-cover border border-[#2b2d31] shadow-lg cursor-pointer" />
                 <button onClick={() => toggleFullscreen(remoteVideoRef)} className="absolute top-2 right-2 bg-black/60 hover:bg-black/80 text-[#b9bbbe] hover:text-white p-1.5 rounded opacity-0 group-hover:opacity-100 transition-opacity z-10" title="Fullscreen">
                   <Maximize size={16} />
                 </button>
@@ -287,7 +316,11 @@ export default function CallOverlay({
           </>
         ) : (
           <>
-            <button className="bg-[#1e1f22] hover:bg-[#40444b] text-[#b9bbbe] hover:text-white p-4 rounded-full transition-colors" title="Turn on Camera (Unavailable)">
+            <button 
+              onClick={toggleCamera} 
+              className={`${isCameraOn ? 'bg-[#ed4245] text-white hover:bg-[#c13b3e]' : 'bg-[#1e1f22] text-[#b9bbbe] hover:text-white hover:bg-[#40444b]'} p-4 rounded-full transition-colors`} 
+              title={isCameraOn ? "Turn off Camera" : "Turn on Camera"}
+            >
               <Video size={24} />
             </button>
             <button 

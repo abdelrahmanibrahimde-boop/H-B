@@ -34,10 +34,14 @@ export default function ChatArea({ activeChat, user }: ChatAreaProps) {
     endCall,
     localStream,
     remoteStream,
+    localStreams,
+    remoteStreams,
     incomingCall,
     callStatus,
     isScreenSharing,
     toggleScreenShare,
+    isCameraOn,
+    toggleCamera,
   } = useCall(user.uid);
 
   // 🔥 Manage Call State for Chat Messages
@@ -153,10 +157,14 @@ export default function ChatArea({ activeChat, user }: ChatAreaProps) {
         endCall={endCall}
         localStream={localStream}
         remoteStream={remoteStream}
+        localStreams={localStreams}
+        remoteStreams={remoteStreams}
         currentUser={user}
         activeChat={activeChat}
         isScreenSharing={isScreenSharing}
         toggleScreenShare={toggleScreenShare}
+        isCameraOn={isCameraOn}
+        toggleCamera={toggleCamera}
       />
 
       {/* Header */}
