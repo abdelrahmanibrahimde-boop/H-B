@@ -110,6 +110,22 @@ export function useCall(currentUserId: string, onIncomingCall?: (callId: string,
       }
     };
 
+    // Fallback: Wenn Firestore (Signaling) durch Adblocker blockiert wird, 
+    // nutzen wir den nativen WebRTC-Status zum Auflegen.
+    pc.oniceconnectionstatechange = () => {
+      if (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed' || pc.iceConnectionState === 'closed') {
+        console.warn('WebRTC ICE Connection lost. Fallback hangup triggered.');
+        endCall();
+      }
+    };
+
+    pc.onconnectionstatechange = () => {
+      if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+        console.warn('WebRTC Connection State lost. Fallback hangup triggered.');
+        endCall();
+      }
+    };
+
     pc.onnegotiationneeded = async () => {
       try {
         if (pc.signalingState !== 'stable') return;
