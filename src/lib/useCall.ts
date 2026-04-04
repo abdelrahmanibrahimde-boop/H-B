@@ -90,11 +90,10 @@ export function useCall(currentUserId: string, onIncomingCall?: (callId: string,
     if (!currentUserId) return;
 
     const callsRef = collection(db, 'calls');
-    // 💡 LÖSUNG PROBLEM 3: "status == calling" entfernt, um den Composite-Index zu umgehen. 
-    // Die Filterung passiert nun absolut zuverlässig lokal im Listener!
     const q = query(
       callsRef,
-      where('receiverId', '==', currentUserId)
+      where('receiverId', '==', currentUserId),
+      where('status', 'in', ['calling', 'connected'])
     );
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -103,7 +102,11 @@ export function useCall(currentUserId: string, onIncomingCall?: (callId: string,
         if (!data) return;
 
         if (change.type === 'added' || change.type === 'modified') {
-          if (data.status === 'calling' && callIdRef.current !== change.doc.id) {
+          if (
+            data.status === 'calling' &&
+            incomingCallIdRef.current !== change.doc.id &&
+            callIdRef.current !== change.doc.id
+          ) {
             setIncomingCall({ callId: change.doc.id, callerId: data.callerId });
             incomingCallIdRef.current = change.doc.id;
             setRemoteUid(data.callerId);
@@ -215,11 +218,14 @@ export function useCall(currentUserId: string, onIncomingCall?: (callId: string,
       candidateQueue.length = 0;
     };
 
+    let lastSent = 0;
     pc.onicecandidate = (event) => {
-      if (event.candidate) {
-        const collectionName = isCaller ? 'offerCandidates' : 'answerCandidates';
-        addDoc(collection(callDoc, collectionName), event.candidate.toJSON());
-      }
+      if (!event.candidate) return;
+      const now = Date.now();
+      if (now - lastSent < 100) return;
+      lastSent = now;
+      const collectionName = isCaller ? 'offerCandidates' : 'answerCandidates';
+      addDoc(collection(callDoc, collectionName), event.candidate.toJSON());
     };
 
     const listenCollectionName = isCaller ? 'answerCandidates' : 'offerCandidates';
@@ -234,6 +240,8 @@ export function useCall(currentUserId: string, onIncomingCall?: (callId: string,
           }
         }
       });
+    }, (error) => {
+      console.error("Firestore listener error:", error);
     });
     unsubscribers.current.push(unsubCandidates);
 
@@ -267,6 +275,8 @@ export function useCall(currentUserId: string, onIncomingCall?: (callId: string,
         if (data?.status === 'connected') {
           setCallStatus('connected');
         }
+      }, (error) => {
+        console.error("Firestore listener error:", error);
       });
       unsubscribers.current.push(unsubCallDoc);
 
@@ -332,6 +342,8 @@ export function useCall(currentUserId: string, onIncomingCall?: (callId: string,
           await pc.setLocalDescription(answer);
           await updateDoc(callDoc, { answer: { type: answer.type, sdp: answer.sdp } });
         }
+      }, (error) => {
+        console.error("Firestore listener error:", error);
       });
       unsubscribers.current.push(unsubCallDoc);
 
