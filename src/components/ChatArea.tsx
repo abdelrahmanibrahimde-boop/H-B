@@ -2,6 +2,8 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Phone, Video, PlusCircle, Image as ImageIcon, FileText, Film, Send, Trash2, Pencil } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { listenMessages, sendMessage, deleteMessage, editMessage } from '../lib/chat';
+import { useCall } from '../lib/useCall';
+import CallOverlay from './CallOverlay';
 
 interface ChatAreaProps {
   activeChat: { id: string; name: string; isSelf?: boolean; photoURL?: string };
@@ -18,6 +20,32 @@ export default function ChatArea({ activeChat, user }: ChatAreaProps) {
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [editContent, setEditContent] = useState('');
   const [showProfileModal, setShowProfileModal] = useState(false);
+
+  // 🔥 Initialize the WebRTC call hook
+  const {
+    createCall,
+    acceptCall,
+    rejectCall,
+    endCall,
+    localStream,
+    remoteStream,
+    incomingCall,
+    callStatus,
+  } = useCall(user.uid);
+
+  const handleCallClick = () => {
+    if (activeChat.isSelf) {
+      console.log('Cannot call yourself!');
+      return;
+    }
+    
+    // Extract the friend's UID from the composite chat ID (uidA_uidB)
+    const friendUid = activeChat.id.split('_').find((id) => id !== user.uid);
+    if (friendUid) {
+      console.log('Calling UID:', friendUid);
+      createCall(friendUid);
+    }
+  };
 
   // 🔥 Auto-scroll
   useEffect(() => {
@@ -47,6 +75,17 @@ export default function ChatArea({ activeChat, user }: ChatAreaProps) {
   return (
     <div className="flex-1 flex flex-col bg-[#36393f] relative">
 
+      {/* 🔥 Call Overlay */}
+      <CallOverlay
+        callStatus={callStatus}
+        incomingCall={incomingCall}
+        acceptCall={acceptCall}
+        rejectCall={rejectCall}
+        endCall={endCall}
+        localStream={localStream}
+        remoteStream={remoteStream}
+      />
+
       {/* Header */}
       <div className="h-14 border-b border-[#202225] flex items-center px-4 shadow-sm z-10 relative">
         <div className="flex-1"></div>
@@ -68,7 +107,7 @@ export default function ChatArea({ activeChat, user }: ChatAreaProps) {
         </div>
 
         <div className="flex-1 flex justify-end items-center gap-4 text-[#b9bbbe]">
-          <button className="hover:text-[#dcddde] transition-colors">
+          <button onClick={handleCallClick} className="hover:text-[#dcddde] transition-colors" title="Start Voice Call">
             <Phone size={20} />
           </button>
           <button className="hover:text-[#dcddde] transition-colors">
