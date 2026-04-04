@@ -54,6 +54,14 @@ export function useCall(currentUserId: string, onIncomingCall?: (callId: string,
             onIncomingCall(change.doc.id, data.callerId);
           }
         }
+          if (change.type === 'removed' || change.type === 'modified') {
+            const data = change.doc.data();
+            if (!data || data.status === 'ended') {
+              setIncomingCall(null);
+              setCallStatus('idle');
+              setRemoteUid(null);
+            }
+          }
       });
     });
 
@@ -105,6 +113,7 @@ export function useCall(currentUserId: string, onIncomingCall?: (callId: string,
     pc.onnegotiationneeded = async () => {
       try {
         if (pc.signalingState !== 'stable') return;
+        if (!pc.currentRemoteDescription) return; // WICHTIG: Verhindert, dass der Empfänger den ersten Handshake mit einem falschen Offer sabotiert!
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
         await updateDoc(callDoc, { offer: { sdp: offer.sdp, type: offer.type } });
@@ -116,13 +125,14 @@ export function useCall(currentUserId: string, onIncomingCall?: (callId: string,
     // 5. ICE candidates exchange
     const candidateQueue: RTCIceCandidateInit[] = [];
 
-    pc.onsignalingstatechange = () => {
-      if (pc.remoteDescription) {
-        candidateQueue.forEach(candidate => {
-          pc.addIceCandidate(new RTCIceCandidate(candidate)).catch(err => console.error('Error adding ICE candidate:', err));
-        });
-        candidateQueue.length = 0;
-      }
+    // Sicherer Interceptor: Feuert die ICE Candidates sofort, sobald die Description gesetzt wurde
+    const originalSetRemote = pc.setRemoteDescription.bind(pc);
+    pc.setRemoteDescription = async (desc) => {
+      await originalSetRemote(desc);
+      candidateQueue.forEach(candidate => {
+        pc.addIceCandidate(new RTCIceCandidate(candidate)).catch(err => console.error('Error adding ICE candidate:', err));
+      });
+      candidateQueue.length = 0;
     };
 
     pc.onicecandidate = (event) => {
@@ -179,7 +189,8 @@ export function useCall(currentUserId: string, onIncomingCall?: (callId: string,
       // 4. listenForAnswer (caller side)
       const unsubCallDoc = onSnapshot(callDoc, async (snapshot) => {
         const data = snapshot.data();
-        if (data?.status === 'ended') {
+        if (!data || data.status === 'ended') {
+        if (!data || data.status === 'ended') {
           endCall();
           return;
         }
@@ -324,7 +335,7 @@ export function useCall(currentUserId: string, onIncomingCall?: (callId: string,
   };
 
   const endCall = async () => {
-    if (callIdRef.current && callStatus !== 'idle') {
+    if (callIdRef.current) {
       try {
         await updateDoc(doc(db, 'calls', callIdRef.current), { status: 'ended' });
       } catch (error) {
