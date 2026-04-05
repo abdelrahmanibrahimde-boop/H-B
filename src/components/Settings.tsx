@@ -32,7 +32,13 @@ export default function Settings({ user, onClose, onSave }: any) {
       const userRef = doc(db, 'users', userId);
       const docSnap = await getDoc(userRef);
       
-      const updatedData = { username, email, birthdate, theme };
+      const updatedData = { 
+        username, 
+        usernameLower: username.toLowerCase(), 
+        email, 
+        birthdate, 
+        theme 
+      };
       if (docSnap.exists()) {
         await updateDoc(userRef, updatedData);
       } else {

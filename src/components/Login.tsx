@@ -34,7 +34,16 @@ export default function Login({ onLogin }: LoginProps) {
         }
 
         const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-        const newUser = { uid: userCredential.user.uid, id: userCredential.user.uid, username: username.trim(), usernameLower, email, birthdate: '', friends: [], theme: 'default' };
+        const newUser = { 
+          uid: userCredential.user.uid, 
+          id: userCredential.user.uid, 
+          username: username.trim(), 
+          usernameLower: username.trim().toLowerCase(), 
+          email, 
+          birthdate: '', 
+          friends: [], 
+          theme: 'default' 
+        };
         await setDoc(doc(db, 'users', userCredential.user.uid), newUser);
         localStorage.setItem('theme', 'default');
         document.documentElement.setAttribute('data-theme', 'default');

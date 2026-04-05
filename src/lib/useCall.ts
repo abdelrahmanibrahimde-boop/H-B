@@ -1,478 +1,240 @@
 import { useState, useEffect, useRef } from 'react';
-import { db } from '../firebase';
-import { collection, doc, setDoc, updateDoc, onSnapshot, addDoc, getDoc, query, where, DocumentReference, DocumentData } from 'firebase/firestore';
+import { io, Socket } from 'socket.io-client';
 
-const servers = {
-  iceServers: [
-    {
-      urls: ['stun:stun.l.google.com:19302'],
-    },
-  ],
-};
-
-export function useCall(currentUserId: string, onIncomingCall?: (callId: string, callerId: string) => void) {
+export function useCall(currentUserId: string) {
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
-  const [localStreams, setLocalStreams] = useState<{ camera: MediaStream | null, screen: MediaStream | null }>({ camera: null, screen: null });
-  const [remoteStreams, setRemoteStreams] = useState<{ camera: MediaStream | null, screen: MediaStream | null }>({ camera: null, screen: null });
-  const [incomingCall, setIncomingCall] = useState<{ callId: string; callerId: string } | null>(null);
   const [callStatus, setCallStatus] = useState<'idle' | 'calling' | 'ringing' | 'connected'>('idle');
-  const [isScreenSharing, setIsScreenSharing] = useState(false);
-  const [isCameraOn, setIsCameraOn] = useState(false);
-  const [remoteUid, setRemoteUid] = useState<string | null>(null);
+  const [incomingCall, setIncomingCall] = useState<any>(null);
+  const [isMuted, setIsMuted] = useState(false);
+  const [callDuration, setCallDuration] = useState(0);
+  const [isUserSpeaking, setIsUserSpeaking] = useState(false);
+  const [isPartnerSpeaking, setIsPartnerSpeaking] = useState(false);
 
+  const socketRef = useRef<Socket | null>(null);
   const pcRef = useRef<RTCPeerConnection | null>(null);
-  const callIdRef = useRef<string | null>(null);
-  const incomingCallIdRef = useRef<string | null>(null);
-  const unsubscribers = useRef<(() => void)[]>([]);
+  const chatIdRef = useRef<string | null>(null);
+  const candidateQueue = useRef<RTCIceCandidateInit[]>([]);
+  const isSpeakingRef = useRef(false);
 
-  const cleanupListeners = () => {
-    unsubscribers.current.forEach((unsub) => unsub());
-    unsubscribers.current = [];
-  };
-
-  // 💡 ZENTRALE CLEANUP-FUNKTION (Nur lokaler Abbau, keine Datenbank-Schreibzugriffe!)
-  const cleanupLocal = () => {
-    cleanupListeners();
-
-    setLocalStreams((prev) => {
-      if (prev.camera) prev.camera.getTracks().forEach(t => t.stop());
-      if (prev.screen) prev.screen.getTracks().forEach(t => t.stop());
-      return { camera: null, screen: null };
-    });
-
-    setRemoteStreams((prev) => {
-      if (prev.camera) prev.camera.getTracks().forEach(t => t.stop());
-      if (prev.screen) prev.screen.getTracks().forEach(t => t.stop());
-      return { camera: null, screen: null };
-    });
-
-    setIsScreenSharing(false);
-    setIsCameraOn(false);
-    setRemoteUid(null);
-
-    if (pcRef.current) {
-      pcRef.current.close();
-      pcRef.current = null;
-    }
-
-    setLocalStream((prev) => {
-      prev?.getTracks().forEach((track) => track.stop());
-      return null;
-    });
-
-    setRemoteStream((prev) => {
-      prev?.getTracks().forEach((track) => track.stop());
-      return null;
-    });
-
-    setCallStatus('idle');
-    setIncomingCall(null);
-    callIdRef.current = null;
-    incomingCallIdRef.current = null;
-  };
-
-  // 💡 LOGIK A: Reaktion auf Remote-Auflegen (Listener & Fallbacks)
-  const handleRemoteEnd = () => {
-    cleanupLocal();
-  };
-
-  // 💡 LOGIK B: Aktives Auflegen durch DIESEN User (Button-Klick)
-  const endCall = () => {
-    if (callIdRef.current) {
-      updateDoc(doc(db, 'calls', callIdRef.current), { status: 'ended' }).catch(err => console.error('Error ending call:', err));
-    }
-    cleanupLocal();
-  };
-
-  // 2. listenForIncomingCalls
   useEffect(() => {
     if (!currentUserId) return;
+    const socket = io(import.meta.env.VITE_SOCKET_URL || "http://localhost:5000");
+    socketRef.current = socket;
+    socket.emit('register', currentUserId);
 
-    const callsRef = collection(db, 'calls');
-    const q = query(
-      callsRef,
-      where('receiverId', '==', currentUserId),
-      where('status', 'in', ['calling', 'connected'])
-    );
-
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      snapshot.docChanges().forEach((change) => {
-        const data = change.doc.data();
-        if (!data) return;
-
-        if (change.type === 'added' || change.type === 'modified') {
-          if (
-            data.status === 'calling' &&
-            incomingCallIdRef.current !== change.doc.id &&
-            callIdRef.current !== change.doc.id
-          ) {
-            setIncomingCall({ callId: change.doc.id, callerId: data.callerId });
-            incomingCallIdRef.current = change.doc.id;
-            setRemoteUid(data.callerId);
-            setCallStatus('ringing');
-            
-            if (onIncomingCall) {
-              onIncomingCall(change.doc.id, data.callerId);
-            }
-          } else if (data.status === 'ended') {
-            if (callIdRef.current === change.doc.id || incomingCallIdRef.current === change.doc.id) {
-              handleRemoteEnd();
-            }
-          }
-        }
-        
-        if (change.type === 'removed') {
-          if (callIdRef.current === change.doc.id || incomingCallIdRef.current === change.doc.id) {
-            handleRemoteEnd();
-          }
-        }
-      });
-    }, (error) => {
-      console.error("Fehler im Anruf-Listener:", error);
+    socket.on('incoming-call', (data) => {
+      console.log("📞 Eingehender Anruf für Chat:", data.chatId);
+      setIncomingCall(data);
+      setCallStatus('ringing');
     });
 
-    return () => unsubscribe();
-  }, [currentUserId, onIncomingCall]);
-
-  const setupMediaAndPC = async (callDoc: DocumentReference<DocumentData>, isCaller: boolean) => {
-    // getUserMedia audio only
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-    setLocalStream(stream);
-
-    const pc = new RTCPeerConnection(servers);
-    
-    stream.getTracks().forEach((track) => {
-      pc.addTrack(track, stream);
-    });
-
-    pc.ontrack = (event) => {
-      const track = event.track;
-      console.log("TRACK:", track.kind, track.contentHint);
-
-      if (track.kind === "audio") {
-        const stream = new MediaStream([track]);
-        setRemoteStream(stream);
-        return;
-      }
-      
-      if (track.kind === "video") {
-        const isScreen = track.contentHint === "detail";
-        
-        if (isScreen) {
-          setRemoteStreams(prev => ({ ...prev, screen: event.streams[0] }));
+    socket.on('signal', async ({ type, data }) => {
+      if (type === 'end-call') {
+        console.log("🛑 Partner hat aufgelegt");
+        stopAll();
+      } else if (type === 'answer' && pcRef.current) {
+        await pcRef.current.setRemoteDescription(new RTCSessionDescription(data));
+        setCallStatus('connected');
+        candidateQueue.current.forEach(c => pcRef.current?.addIceCandidate(new RTCIceCandidate(c)));
+        candidateQueue.current = [];
+      } else if (type === 'ice-candidate') {
+        if (pcRef.current?.remoteDescription) {
+          pcRef.current.addIceCandidate(new RTCIceCandidate(data)).catch(() => {});
         } else {
-          setRemoteStreams(prev => ({ ...prev, camera: event.streams[0] }));
+          candidateQueue.current.push(data);
         }
-
-        track.onended = () => {
-          if (track.kind === "video") {
-            if (track.contentHint === "detail") {
-              setRemoteStreams(prev => ({ ...prev, screen: null }));
-            } else {
-              setRemoteStreams(prev => ({ ...prev, camera: null }));
-            }
-          }
-        };
       }
-    };
-
-    // Fallback: Wenn Firestore (Signaling) durch Adblocker blockiert wird, 
-    // nutzen wir den nativen WebRTC-Status zum Auflegen.
-    pc.oniceconnectionstatechange = () => {
-      if (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed' || pc.iceConnectionState === 'closed') {
-        console.warn('WebRTC ICE Connection lost. Fallback hangup triggered.');
-        handleRemoteEnd();
-      }
-    };
-
-    pc.onconnectionstatechange = () => {
-      if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed' || pc.connectionState === 'closed') {
-        console.warn('WebRTC Connection State lost. Fallback hangup triggered.');
-        handleRemoteEnd();
-      }
-    };
-
-    pc.onnegotiationneeded = async () => {
-      try {
-        if (pc.signalingState !== 'stable') return;
-        if (!pc.currentRemoteDescription) return; // WICHTIG: Verhindert, dass der Empfänger den ersten Handshake mit einem falschen Offer sabotiert!
-        const offer = await pc.createOffer();
-        await pc.setLocalDescription(offer);
-        await updateDoc(callDoc, { offer: { sdp: offer.sdp, type: offer.type } });
-      } catch (error) {
-        console.error('Error during renegotiation:', error);
-      }
-    };
-
-    // 5. ICE candidates exchange
-    const candidateQueue: RTCIceCandidateInit[] = [];
-
-    // Sicherer Interceptor: Feuert die ICE Candidates sofort, sobald die Description gesetzt wurde
-    const originalSetRemote = pc.setRemoteDescription.bind(pc);
-    pc.setRemoteDescription = async (desc) => {
-      await originalSetRemote(desc);
-      candidateQueue.forEach(candidate => {
-        pc.addIceCandidate(new RTCIceCandidate(candidate)).catch(err => console.error('Error adding ICE candidate:', err));
-      });
-      candidateQueue.length = 0;
-    };
-
-    const localCandidates: any[] = [];
-    let candidateTimeout: NodeJS.Timeout | null = null;
-
-    pc.onicecandidate = (event) => {
-      const collectionName = isCaller ? 'offerCandidates' : 'answerCandidates';
-      
-      if (event.candidate) {
-        localCandidates.push(event.candidate.toJSON());
-        
-        // Batche die Updates, falls extrem viele Candidates reinkommen (spart massive Writes)
-        if (!candidateTimeout) {
-          candidateTimeout = setTimeout(() => {
-            setDoc(callDoc, { [collectionName]: localCandidates }, { merge: true }).catch(err => console.error('Error updating candidates:', err));
-            candidateTimeout = null;
-          }, 1000);
-        }
-      } else {
-        // Gathering abgeschlossen (alle Candidates gefunden) -> Sofortiges Schreiben
-        if (candidateTimeout) {
-          clearTimeout(candidateTimeout);
-          candidateTimeout = null;
-        }
-        setDoc(callDoc, { [collectionName]: localCandidates }, { merge: true }).catch(err => console.error('Error updating candidates:', err));
-      }
-    };
-
-    unsubscribers.current.push(() => {
-      if (candidateTimeout) clearTimeout(candidateTimeout);
     });
 
-    const listenCollectionName = isCaller ? 'answerCandidates' : 'offerCandidates';
-    let processedCandidates = 0;
-
-    // Lausche auf das Hauptdokument statt auf eine Subcollection
-    const unsubCandidates = onSnapshot(callDoc, (snapshot) => {
-      const data = snapshot.data();
-      if (data && data[listenCollectionName]) {
-        const candidates = data[listenCollectionName];
-        if (candidates.length > processedCandidates) {
-          const newCandidates = candidates.slice(processedCandidates);
-          newCandidates.forEach((candidateData: any) => {
-            if (pc.remoteDescription) {
-              pc.addIceCandidate(new RTCIceCandidate(candidateData)).catch(err => console.error('Error adding ICE candidate:', err));
-            } else {
-              candidateQueue.push(candidateData);
-            }
-          });
-          processedCandidates = candidates.length;
-        }
+    socket.on('speech-status', (data) => {
+      if (data && data.isSpeaking !== undefined) {
+        setIsPartnerSpeaking(data.isSpeaking);
       }
-    }, (error) => {
-      console.error("Firestore listener error:", error);
     });
-    unsubscribers.current.push(unsubCandidates);
 
-    pcRef.current = pc;
-    return { pc, stream };
-  };
+    return () => { socket.disconnect(); };
+  }, [currentUserId]);
 
-  // 1. createCall (caller)
-  const createCall = async (receiverId: string) => {
-    try {
-      const callDoc = doc(collection(db, 'calls'));
-      callIdRef.current = callDoc.id;
-      setRemoteUid(receiverId);
-
-      setCallStatus('calling');
-
-      // 💡 LÖSUNG PROBLEM 1: Listener sofort starten, BEVOR Signalisierung und setDoc laufen!
-      // So bekommen wir ein Reject in Millisekunden mit, selbst wenn der User extrem schnell war.
-      const unsubCallDoc = onSnapshot(callDoc, async (snapshot) => {
-        const data = snapshot.data();
-        if (!data || data.status === 'ended') {
-          handleRemoteEnd();
-          return;
-        }
-        
-        if (data?.answer && pcRef.current?.signalingState === 'have-local-offer' && pcRef.current.currentRemoteDescription?.sdp !== data.answer.sdp) {
-          const answerDescription = new RTCSessionDescription(data.answer);
-          await pcRef.current.setRemoteDescription(answerDescription);
-        }
-
-        if (data?.status === 'connected') {
-          setCallStatus('connected');
-        }
-      }, (error) => {
-        console.error("Firestore listener error:", error);
-      });
-      unsubscribers.current.push(unsubCallDoc);
-
-      const { pc } = await setupMediaAndPC(callDoc, true);
-
-      const offerDescription = await pc.createOffer();
-      await pc.setLocalDescription(offerDescription);
-
-      const offer = {
-        sdp: offerDescription.sdp,
-        type: offerDescription.type,
-      };
-
-      await setDoc(callDoc, {
-        offer,
-        callerId: currentUserId,
-        receiverId,
-        status: 'calling',
-      });
-
-    } catch (error) {
-      console.error('Error creating call:', error);
-      handleRemoteEnd();
-    }
-  };
-
-  // 3. acceptCall
-  const acceptCall = async (callId: string) => {
-    try {
-      callIdRef.current = callId;
-      const callDoc = doc(db, 'calls', callId);
-      const { pc } = await setupMediaAndPC(callDoc, false);
-
-      const callData = (await getDoc(callDoc)).data();
-      if (!callData) return;
-
-      const offerDescription = callData.offer;
-      await pc.setRemoteDescription(new RTCSessionDescription(offerDescription));
-
-      const answerDescription = await pc.createAnswer();
-      await pc.setLocalDescription(answerDescription);
-
-      const answer = {
-        type: answerDescription.type,
-        sdp: answerDescription.sdp,
-      };
-
-      await updateDoc(callDoc, {
-        answer,
-        status: 'connected',
-      });
-
-      const unsubCallDoc = onSnapshot(callDoc, async (snapshot) => {
-        const data = snapshot.data();
-        if (!data || data.status === 'ended') {
-          handleRemoteEnd();
-          return;
-        }
-        
-        if (data?.offer && pc.signalingState === 'stable' && pc.remoteDescription?.sdp !== data.offer.sdp) {
-          await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
-          const answer = await pc.createAnswer();
-          await pc.setLocalDescription(answer);
-          await updateDoc(callDoc, { answer: { type: answer.type, sdp: answer.sdp } });
-        }
-      }, (error) => {
-        console.error("Firestore listener error:", error);
-      });
-      unsubscribers.current.push(unsubCallDoc);
-
-      setCallStatus('connected');
-      setIncomingCall(null);
-    } catch (error) {
-      console.error('Error accepting call:', error);
-      setCallStatus('idle');
-      cleanupListeners();
-    }
-  };
-
-  const rejectCall = (callId: string) => {
-    // Fire & Forget - UI sofort zurücksetzen!
-    updateDoc(doc(db, 'calls', callId), { status: 'ended' }).catch(err => console.error('Error rejecting call:', err));
-    cleanupLocal();
-  };
-
-  const toggleCamera = async () => {
-    if (!pcRef.current) return;
-
-    if (isCameraOn) {
-      if (localStreams.camera) {
-        localStreams.camera.getTracks().forEach(t => t.stop());
-        const sender = pcRef.current.getSenders().find(s => s.track === localStreams.camera?.getVideoTracks()[0]);
-        if (sender) pcRef.current.removeTrack(sender);
-        setLocalStreams(prev => ({ ...prev, camera: null }));
-      }
-      setIsCameraOn(false);
-    } else {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-        const track = stream.getVideoTracks()[0];
-        
-        track.contentHint = 'motion';
-        
-        pcRef.current.addTrack(track, stream);
-        setLocalStreams(prev => ({ ...prev, camera: stream }));
-        setIsCameraOn(true);
-      } catch (error) {
-        console.error('Error starting camera:', error);
-      }
-    }
-  };
-
-  const toggleScreenShare = async () => {
-    if (!pcRef.current) return;
-
-    if (isScreenSharing) {
-      if (localStreams.screen) {
-        localStreams.screen.getTracks().forEach(t => t.stop());
-        const sender = pcRef.current.getSenders().find(s => s.track === localStreams.screen?.getVideoTracks()[0]);
-        if (sender) pcRef.current.removeTrack(sender);
-        setLocalStreams(prev => ({ ...prev, screen: null }));
-      }
-      setIsScreenSharing(false);
-    } else {
-      try {
-        const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
-        const track = stream.getVideoTracks()[0];
-        
-        track.contentHint = 'detail';
-
-        track.onended = () => {
-          const sender = pcRef.current?.getSenders().find(s => s.track === track);
-          if (sender && pcRef.current) pcRef.current.removeTrack(sender);
-          setLocalStreams(prev => ({ ...prev, screen: null }));
-          setIsScreenSharing(false);
-        };
-
-        pcRef.current.addTrack(track, stream);
-        setLocalStreams(prev => ({ ...prev, screen: stream }));
-        setIsScreenSharing(true);
-      } catch (error) {
-        console.error('Error starting screen share:', error);
-      }
-    }
-  };
-
-  // Cleanup connection on unmount
+  // AUTO-TIMEOUT LOGIC (30 Sekunden)
   useEffect(() => {
-    return () => {
-      endCall();
-    };
-  }, []);
+    let timeout: NodeJS.Timeout;
+    if (callStatus === 'calling' || callStatus === 'ringing') {
+      timeout = setTimeout(() => {
+        console.log("⏱️ Anruf-Timeout erreicht (30s). Lege auf.");
+        // Die ID kann entweder in chatIdRef (Anrufer) oder incomingCall (Angerufener) stecken
+        const roomId = chatIdRef.current || incomingCall?.chatId;
+        if (roomId) {
+          socketRef.current?.emit('signal', { roomId, type: 'end-call' });
+        }
+        stopAll();
+      }, 30000);
+    }
+    return () => clearTimeout(timeout);
+  }, [callStatus, incomingCall]);
 
-  return {
-    createCall,
-    acceptCall,
-    rejectCall,
-    endCall,
-    localStream,
-    remoteStream,
-    localStreams,
-    remoteStreams,
-    incomingCall,
-    callStatus,
-    isScreenSharing,
-    toggleScreenShare,
-    isCameraOn,
-    toggleCamera,
-    remoteUid,
+  // Timer-Logik für den Anruf
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    if (callStatus === 'connected') {
+      interval = setInterval(() => {
+        setCallDuration((prev) => prev + 1);
+      }, 1000);
+    } else {
+      setCallDuration(0);
+    }
+    
+    return () => clearInterval(interval);
+  }, [callStatus]);
+
+  // Voice Activity Detection (Sprecherkennung über RMS)
+  useEffect(() => {
+    if (!localStream) {
+      setIsUserSpeaking(false);
+      return;
+    }
+
+    const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+    const analyser = audioContext.createAnalyser();
+    const microphone = audioContext.createMediaStreamSource(localStream);
+    
+    analyser.fftSize = 512;
+    microphone.connect(analyser);
+
+    const bufferLength = analyser.fftSize;
+    const dataArray = new Float32Array(bufferLength);
+    let animationFrame: number;
+
+    const checkVolume = () => {
+      analyser.getFloatTimeDomainData(dataArray);
+      
+      let sumSquares = 0;
+      for (let i = 0; i < bufferLength; i++) {
+        sumSquares += dataArray[i] * dataArray[i];
+      }
+      
+      const rms = Math.sqrt(sumSquares / bufferLength);
+      
+      // Schwellwert (0.05 ist ein guter Durchschnitt für Sprache)
+      const isSpeakingNow = rms > 0.05;
+      
+      // Nur State aktualisieren und Socket Event senden, wenn sich der Status ändert (spart Traffic)
+      if (isSpeakingNow !== isSpeakingRef.current) {
+        isSpeakingRef.current = isSpeakingNow;
+        setIsUserSpeaking(isSpeakingNow);
+        
+        if (socketRef.current && chatIdRef.current) {
+          socketRef.current.emit('speech-status', { roomId: chatIdRef.current, isSpeaking: isSpeakingNow });
+        }
+      }
+      
+      animationFrame = requestAnimationFrame(checkVolume);
+    };
+
+    checkVolume();
+
+    return () => {
+      cancelAnimationFrame(animationFrame);
+      audioContext.close().catch(console.error);
+    };
+  }, [localStream]);
+
+  const setupPC = (chatId: string) => {
+    const pc = new RTCPeerConnection({
+      iceServers: [{ urls: ['stun:stun1.l.google.com:19302', 'stun:stun2.l.google.com:19302'] }]
+    });
+    pc.onicecandidate = (e) => {
+      if (e.candidate) socketRef.current?.emit('signal', { roomId: chatId, type: 'ice-candidate', data: e.candidate });
+    };
+    pc.ontrack = (e) => {
+      console.log("🎵 Remote Audio empfangen");
+      setRemoteStream(e.streams[0]);
+    };
+    pcRef.current = pc;
+    return pc;
   };
+
+  const createCall = async (receiverId: string, callerName?: string) => {
+    const chatId = [currentUserId, receiverId].sort().join('_');
+    chatIdRef.current = chatId;
+    setCallStatus('calling');
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      setLocalStream(stream);
+      const pc = setupPC(chatId);
+      stream.getTracks().forEach(t => pc.addTrack(t, stream));
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      socketRef.current?.emit('join-room', chatId);
+      socketRef.current?.emit('call-user', { 
+        targetId: receiverId, 
+        callerId: currentUserId, 
+        callerName: callerName || currentUserId, // Name mitsenden
+        chatId, 
+        offer 
+      });
+    } catch (e) { stopAll(); }
+  };
+
+  const acceptCall = async () => {
+    if (!incomingCall) return;
+    const { chatId, offer } = incomingCall; // Fix: Benutze chatId statt callId
+    chatIdRef.current = chatId;
+    
+    try {
+      socketRef.current?.emit('join-room', chatId);
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      setLocalStream(stream);
+      const pc = setupPC(chatId);
+      stream.getTracks().forEach(t => pc.addTrack(t, stream));
+      await pc.setRemoteDescription(new RTCSessionDescription(offer));
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      socketRef.current?.emit('signal', { roomId: chatId, type: 'answer', data: answer });
+      setCallStatus('connected');
+    } catch (e) { stopAll(); }
+  };
+
+  const stopAll = () => {
+    pcRef.current?.close();
+    pcRef.current = null;
+    localStream?.getTracks().forEach(t => t.stop());
+    setLocalStream(null);
+    setRemoteStream(null);
+    setCallStatus('idle');
+    setIncomingCall(null);
+    chatIdRef.current = null;
+    setIsMuted(false);
+    setCallDuration(0);
+    setIsPartnerSpeaking(false);
+    isSpeakingRef.current = false;
+  };
+
+  const endCall = () => {
+    if (chatIdRef.current) {
+      socketRef.current?.emit('signal', { roomId: chatIdRef.current, type: 'end-call' });
+    }
+    stopAll();
+  };
+
+  const rejectCall = () => {
+    // Beim Ablehnen ist chatIdRef ggf. noch nicht gesetzt, wir nutzen die ID aus incomingCall
+    const roomId = incomingCall?.chatId || chatIdRef.current;
+    if (roomId) {
+      socketRef.current?.emit('signal', { roomId, type: 'end-call' });
+    }
+    stopAll();
+  };
+
+  const toggleMute = () => {
+    if (localStream) {
+      const audioTrack = localStream.getAudioTracks()[0];
+      if (audioTrack) {
+        audioTrack.enabled = !audioTrack.enabled;
+        setIsMuted(!audioTrack.enabled);
+      }
+    }
+  };
+
+  return { createCall, acceptCall, rejectCall, endCall, localStream, remoteStream, callStatus, incomingCall, isMuted, toggleMute, callDuration, isUserSpeaking, isPartnerSpeaking };
 }

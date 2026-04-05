@@ -31,9 +31,9 @@ export const createChat = async (currentUserId: string, otherUserId: string): Pr
  * @param senderId The UID of the sender
  * @param senderUsername The username of the sender
  * @param text The message content
- * @param type The message type (text, image, video, file)
- * @param fileUrl The base64 file string
- * @param fileName The original file name
+ * @param type The message type ('text' | 'image' | 'video' | 'file')
+ * @param fileUrl The base64 file string (for attachments)
+ * @param fileName The original file name (for attachments)
  */
 export const sendMessage = async (chatId: string, senderId: string, senderUsername: string, text: string, type: string = 'text', fileUrl: string | null = null, fileName: string | null = null) => {
   const messagesRef = collection(db, 'chats', chatId, 'messages');
@@ -89,6 +89,7 @@ export const listenMessages = (chatId: string, callback: (messages: any[]) => vo
   const q = query(messagesRef, orderBy('createdAt', 'asc'));
 
   return onSnapshot(q, (snapshot) => {
+    console.count("🔥 FIRESTORE-READ: [chat.ts - listenMessages]");
     const messages = snapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data()

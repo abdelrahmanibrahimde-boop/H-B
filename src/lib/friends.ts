@@ -9,6 +9,8 @@ export const sendFriendRequest = async (
 ) => {
   if (currentUsername === targetUsername) throw new Error("Du kannst dir selbst keine Anfrage senden.");
 
+  console.log("Firestore-Abfrage: Suche nach Nutzer...");
+
   // Ziel-Nutzer anhand des Namens suchen
   const usersRef = collection(db, 'users');
   const qUser = query(usersRef, where('usernameLower', '==', targetUsername.toLowerCase()));
@@ -17,6 +19,8 @@ export const sendFriendRequest = async (
   if (userSnap.empty) throw new Error("Benutzer nicht gefunden.");
 
   const targetUser = userSnap.docs[0].data();
+  
+  if (targetUser.uid === currentUserId) throw new Error("Du kannst dir selbst keine Anfrage senden.");
 
   // Debug-Logs zur Kontrolle der zugewiesenen IDs
   console.log(`[FriendRequest] Absender ID (currentUserId): ${currentUserId}`);
@@ -65,6 +69,7 @@ export const listenFriendRequests = (currentUserId: string, callback: (requests:
   const q = query(reqRef, where('to', '==', currentUserId), where('status', '==', 'pending'));
 
   return onSnapshot(q, (snapshot) => {
+    console.count("🔥 FIRESTORE-READ: [friends.ts - listenFriendRequests]");
     const requests = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     callback(requests);
   });

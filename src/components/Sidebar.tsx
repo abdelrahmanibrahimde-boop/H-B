@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { UserPlus, Users, LogOut, MessageSquare } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { collection, onSnapshot } from 'firebase/firestore';
+import { collection, doc, getDoc, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
 import { createChat } from '../lib/chat';
 import { sendFriendRequest, listenFriendRequests, acceptFriendRequest, rejectFriendRequest } from '../lib/friends';
@@ -23,14 +23,20 @@ export default function Sidebar({ activeChat, setActiveChat, onLogout, user, onO
 
   useEffect(() => {
     // Echtzeit-Listener auf alle Nutzer, um Freunde herauszufiltern
-    const unsubscribeUsers = onSnapshot(collection(db, 'users'), (snapshot) => {
-      const allUsers = snapshot.docs.map(doc => doc.data());
-      const me = allUsers.find(u => u.uid === user.uid);
-      const myFriendsIds = me?.friends || [];
-
-      // Nur Freunde in der Sidebar anzeigen
-      const myFriends = allUsers.filter(u => u.uid !== user.uid && myFriendsIds.includes(u.uid));
-      setUsers(myFriends);
+    const unsubscribeUsers = onSnapshot(doc(db, 'users', user.uid), async (docSnap) => {
+      console.count("🔥 FIRESTORE-READ: [Sidebar.tsx - users]");
+      if (docSnap.exists()) {
+        const userData = docSnap.data();
+        const myFriendsIds = userData.friends || [];
+        if (myFriendsIds.length > 0) {
+          const friendsPromises = myFriendsIds.map((id: string) => getDoc(doc(db, 'users', id)));
+          const friendsSnaps = await Promise.all(friendsPromises);
+          const myFriends = friendsSnaps.filter(snap => snap.exists()).map(snap => snap.data());
+          setUsers(myFriends);
+        } else {
+          setUsers([]);
+        }
+      }
     });
 
     const unsubscribeRequests = listenFriendRequests(user.uid, setRequests);
