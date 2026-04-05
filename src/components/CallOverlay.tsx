@@ -2,13 +2,15 @@ import React, { useEffect, useRef } from 'react';
 import { Phone, PhoneOff, Mic, MicOff } from 'lucide-react';
 
 export default function CallOverlay({ callStatus, incomingCall, acceptCall, rejectCall, endCall, activeChat, remoteStream, isMuted, toggleMute, callDuration, currentUser, isUserSpeaking, isPartnerSpeaking }: any) {
-  const audioRef = useRef<HTMLAudioElement>(null);
+  const remoteAudioRef = useRef<HTMLAudioElement>(null);
 
   useEffect(() => {
-    if (audioRef.current && remoteStream) {
-      audioRef.current.srcObject = remoteStream;
-      // Sicherstellen, dass das Audio wirklich abspielt
-      audioRef.current.play().catch(e => console.error("Audio Play Fehler:", e));
+    if (remoteAudioRef.current && remoteStream) {
+      remoteAudioRef.current.srcObject = remoteStream;
+      remoteAudioRef.current.play().catch(err => {
+        console.error("Autoplay wurde blockiert:", err);
+        // Optional: Zeige dem Nutzer einen Button "Ton aktivieren"
+      });
     }
   }, [remoteStream]);
 
@@ -29,7 +31,7 @@ export default function CallOverlay({ callStatus, incomingCall, acceptCall, reje
   if (callStatus === 'ringing') {
     return (
       <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-[999] backdrop-blur-md">
-        <audio ref={audioRef} autoPlay playsInline />
+        <audio ref={remoteAudioRef} autoPlay playsInline controls={false} />
         <div className="bg-[#2f3136] p-10 rounded-3xl shadow-2xl flex flex-col items-center w-80 border border-white/10">
           <div className="w-24 h-24 rounded-full bg-[#4f545c] flex items-center justify-center text-white text-4xl font-bold mb-6 shadow-xl">
             {activeChat?.photoURL && activeChat?.name === displayName ? <img src={activeChat.photoURL} className="w-full h-full object-cover" alt="avatar" /> : displayName[0]?.toUpperCase()}
@@ -52,7 +54,7 @@ export default function CallOverlay({ callStatus, incomingCall, acceptCall, reje
   // Schmaler Header im Chat für "calling" und "connected"
   return (
     <div className="w-full bg-[#202225] border-b border-[#1e1f22] py-6 flex flex-col items-center justify-center z-20 shrink-0 shadow-md gap-6">
-      <audio ref={audioRef} autoPlay playsInline />
+      <audio ref={remoteAudioRef} autoPlay playsInline controls={false} />
       
       {/* Avatare zentriert nebeneinander */}
       <div className="flex items-center justify-center gap-2">
