@@ -141,10 +141,17 @@ export function useCall(currentUserId: string) {
 
   const setupPC = (chatId: string) => {
     const pc = new RTCPeerConnection({
-      iceServers: [{ urls: ['stun:stun1.l.google.com:19302', 'stun:stun2.l.google.com:19302'] }]
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: 'stun:stun2.l.google.com:19302' }
+      ]
     });
     pc.onicecandidate = (e) => {
       if (e.candidate) socketRef.current?.emit('signal', { roomId: chatId, type: 'ice-candidate', data: e.candidate });
+    };
+    pc.oniceconnectionstatechange = () => {
+      console.log("🌐 ICE Connection State:", pc.iceConnectionState);
     };
     pc.ontrack = (e) => {
       console.log("🎵 Remote Audio empfangen");
@@ -159,7 +166,10 @@ export function useCall(currentUserId: string) {
     chatIdRef.current = chatId;
     setCallStatus('calling');
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }, 
+        video: false 
+      });
       setLocalStream(stream);
       const pc = setupPC(chatId);
       stream.getTracks().forEach(t => pc.addTrack(t, stream));
@@ -183,7 +193,10 @@ export function useCall(currentUserId: string) {
     
     try {
       socketRef.current?.emit('join-room', chatId);
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }, 
+        video: false 
+      });
       setLocalStream(stream);
       const pc = setupPC(chatId);
       stream.getTracks().forEach(t => pc.addTrack(t, stream));
