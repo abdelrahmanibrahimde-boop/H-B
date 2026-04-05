@@ -25,6 +25,9 @@ export function useCall(currentUserId: string) {
 
     socket.on('incoming-call', (data) => {
       console.log("📞 Eingehender Anruf für Chat:", data.chatId);
+      // WICHTIG: Sofort dem Raum beitreten, um ICE-Kandidaten abzufangen, 
+      // bevor der User überhaupt auf "Annehmen" klickt!
+      socket.emit('join-room', data.chatId); 
       setIncomingCall(data);
       setCallStatus('ringing');
     });
@@ -34,14 +37,18 @@ export function useCall(currentUserId: string) {
         console.log("🛑 Partner hat aufgelegt");
         stopAll();
       } else if (type === 'answer' && pcRef.current) {
+        console.log("✅ Answer empfangen, setze Remote Description.");
         await pcRef.current.setRemoteDescription(new RTCSessionDescription(data));
         setCallStatus('connected');
-        candidateQueue.current.forEach(c => pcRef.current?.addIceCandidate(new RTCIceCandidate(c)));
+        console.log(`⏳ Verarbeite ${candidateQueue.current.length} gepufferte ICE Candidates für Anrufer...`);
+        candidateQueue.current.forEach(c => pcRef.current?.addIceCandidate(new RTCIceCandidate(c)).catch(console.error));
         candidateQueue.current = [];
       } else if (type === 'ice-candidate') {
+        console.log("🧊 ICE Candidate vom Partner empfangen.");
         if (pcRef.current?.remoteDescription) {
-          pcRef.current.addIceCandidate(new RTCIceCandidate(data)).catch(() => {});
+          pcRef.current.addIceCandidate(new RTCIceCandidate(data)).catch(console.error);
         } else {
+          console.log("⏳ Remote Description fehlt noch, Candidate wird in Queue gespeichert.");
           candidateQueue.current.push(data);
         }
       }
@@ -144,14 +151,22 @@ export function useCall(currentUserId: string) {
       iceServers: [
         { urls: 'stun:stun.l.google.com:19302' },
         { urls: 'stun:stun1.l.google.com:19302' },
-        { urls: 'stun:stun2.l.google.com:19302' }
+        { urls: 'stun:stun2.l.google.com:19302' },
+        { urls: 'stun:stun3.l.google.com:19302' },
+        { urls: 'stun:stun4.l.google.com:19302' }
       ]
     });
     pc.onicecandidate = (e) => {
-      if (e.candidate) socketRef.current?.emit('signal', { roomId: chatId, type: 'ice-candidate', data: e.candidate });
+      if (e.candidate) {
+        console.log("🧊 Sende eigenen ICE Candidate an Partner...");
+        socketRef.current?.emit('signal', { roomId: chatId, type: 'ice-candidate', data: e.candidate });
+      }
     };
     pc.oniceconnectionstatechange = () => {
-      console.log("🌐 ICE Connection State:", pc.iceConnectionState);
+      console.log("🌐 ICE Connection State geändert auf:", pc.iceConnectionState);
+    };
+    pc.onicegatheringstatechange = () => {
+      console.log("📡 ICE Gathering State geändert auf:", pc.iceGatheringState);
     };
     pc.ontrack = (e) => {
       console.log("🎵 Remote Audio empfangen");
@@ -166,16 +181,18 @@ export function useCall(currentUserId: string) {
     chatIdRef.current = chatId;
     setCallStatus('calling');
     try {
+      console.log("🎙️ Frage Mikrofon-Berechtigung (Anrufer) ab...");
       const stream = await navigator.mediaDevices.getUserMedia({ 
         audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }, 
         video: false 
       });
       setLocalStream(stream);
+      socketRef.current?.emit('join-room', chatId);
       const pc = setupPC(chatId);
       stream.getTracks().forEach(t => pc.addTrack(t, stream));
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
-      socketRef.current?.emit('join-room', chatId);
+      console.log("📡 Sende Offer an Partner...");
       socketRef.current?.emit('call-user', { 
         targetId: receiverId, 
         callerId: currentUserId, 
@@ -183,7 +200,11 @@ export function useCall(currentUserId: string) {
         chatId, 
         offer 
       });
-    } catch (e) { stopAll(); }
+    } catch (e) { 
+      console.error("❌ Fehler beim Starten des Anrufs (Mikrofon blockiert?):", e);
+      alert("Zugriff auf das Mikrofon verweigert. Bitte prüfe deine Browser-Einstellungen.");
+      stopAll(); 
+    }
   };
 
   const acceptCall = async () => {
@@ -192,6 +213,7 @@ export function useCall(currentUserId: string) {
     chatIdRef.current = chatId;
     
     try {
+      console.log("🎙️ Frage Mikrofon-Berechtigung (Angerufener) ab...");
       socketRef.current?.emit('join-room', chatId);
       const stream = await navigator.mediaDevices.getUserMedia({ 
         audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }, 
@@ -200,12 +222,26 @@ export function useCall(currentUserId: string) {
       setLocalStream(stream);
       const pc = setupPC(chatId);
       stream.getTracks().forEach(t => pc.addTrack(t, stream));
+      
+      console.log("✅ Setze Remote Description aus Offer...");
       await pc.setRemoteDescription(new RTCSessionDescription(offer));
+      
+      // WICHTIG: Die Queue für den Angerufenen leeren, da ICE Candidates
+      // schon angekommen sein könnten, während es noch geklingelt hat!
+      console.log(`⏳ Verarbeite ${candidateQueue.current.length} gepufferte ICE Candidates für Angerufenen...`);
+      candidateQueue.current.forEach(c => pc.addIceCandidate(new RTCIceCandidate(c)).catch(console.error));
+      candidateQueue.current = [];
+
+      console.log("📡 Erstelle und sende Answer...");
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
       socketRef.current?.emit('signal', { roomId: chatId, type: 'answer', data: answer });
       setCallStatus('connected');
-    } catch (e) { stopAll(); }
+    } catch (e) { 
+      console.error("❌ Fehler beim Annehmen des Anrufs (Mikrofon blockiert?):", e);
+      alert("Zugriff auf das Mikrofon verweigert. Bitte prüfe deine Browser-Einstellungen.");
+      stopAll(); 
+    }
   };
 
   const stopAll = () => {
