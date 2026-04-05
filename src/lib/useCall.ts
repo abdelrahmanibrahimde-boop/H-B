@@ -102,6 +102,13 @@ export function useCall(currentUserId: string) {
     }
 
     const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+    
+    // FIX: Auf Tablets/iOS Safari startet der Context oft 'suspended' 
+    // und muss explizit fortgesetzt werden, sonst gibt es Fehler oder Endlosschleifen.
+    if (audioContext.state === 'suspended') {
+      audioContext.resume().catch(console.error);
+    }
+    
     const analyser = audioContext.createAnalyser();
     const microphone = audioContext.createMediaStreamSource(localStream);
     
@@ -153,7 +160,15 @@ export function useCall(currentUserId: string) {
         { urls: 'stun:stun1.l.google.com:19302' },
         { urls: 'stun:stun2.l.google.com:19302' },
         { urls: 'stun:stun3.l.google.com:19302' },
-        { urls: 'stun:stun4.l.google.com:19302' }
+        { urls: 'stun:stun4.l.google.com:19302' },
+        // --- TURN SERVER PLATZHALTER ---
+        // Wenn STUN blockiert wird (Status 'failed'), leitet TURN den Traffic als Relais weiter.
+        // Kostenlos zu bekommen bei: https://www.metered.ca/stun-turn
+        // {
+        //   urls: 'turn:global.relay.metered.ca:80',
+        //   username: 'DEIN_METERED_USERNAME',
+        //   credential: 'DEIN_METERED_PASSWORD'
+        // }
       ]
     });
     pc.onicecandidate = (e) => {
@@ -164,6 +179,9 @@ export function useCall(currentUserId: string) {
     };
     pc.oniceconnectionstatechange = () => {
       console.log("🌐 ICE Connection State geändert auf:", pc.iceConnectionState);
+      if (pc.iceConnectionState === 'failed') {
+        console.error("❌ ICE Verbindung fehlgeschlagen! Die Firewalls sind zu streng. Hier wird ein TURN-Server benötigt.");
+      }
     };
     pc.onicegatheringstatechange = () => {
       console.log("📡 ICE Gathering State geändert auf:", pc.iceGatheringState);
