@@ -109,7 +109,7 @@ export default function ChatArea({ activeChat, user }: ChatAreaProps) {
 
     // 700KB Limit-Prüfung zum Schutz der Firestore-Datenbank (1MB Doc-Limit)
     if (file.size > 700 * 1024) {
-      alert("Datei zu groß! Max. 700KB erlaubt.");
+      alert("Datei zu groß (max 700KB)");
       if (fileInputRef.current) fileInputRef.current.value = '';
       return;
     }

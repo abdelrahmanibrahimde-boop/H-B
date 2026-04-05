@@ -19,7 +19,7 @@ export function useCall(currentUserId: string) {
 
   useEffect(() => {
     if (!currentUserId) return;
-    const socket = io(import.meta.env.VITE_SOCKET_URL || "http://localhost:5000");
+    const socket = io((import.meta as any).env.VITE_SOCKET_URL || "http://localhost:5000");
     socketRef.current = socket;
     socket.emit('register', currentUserId);
 
