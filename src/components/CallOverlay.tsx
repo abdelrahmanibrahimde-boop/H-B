@@ -1,18 +1,33 @@
-import React, { useEffect, useRef } from 'react';
-import { Phone, PhoneOff, Mic, MicOff } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { Phone, PhoneOff, Mic, MicOff, Volume2 } from 'lucide-react';
 
-export default function CallOverlay({ callStatus, incomingCall, acceptCall, rejectCall, endCall, activeChat, remoteStream, isMuted, toggleMute, callDuration, currentUser, isUserSpeaking, isPartnerSpeaking }: any) {
+export default function CallOverlay({ 
+  callStatus, incomingCall, acceptCall, rejectCall, endCall, 
+  activeChat, remoteStream, isMuted, toggleMute, callDuration, 
+  currentUser, isUserSpeaking, isPartnerSpeaking 
+}: any) {
+  
   const remoteAudioRef = useRef<HTMLAudioElement>(null);
+  const [autoplayBlocked, setAutoplayBlocked] = useState(false);
 
   useEffect(() => {
+    // Wenn ein Stream da ist, dem Audio-Element zuweisen
     if (remoteAudioRef.current && remoteStream) {
+      console.log("🎵 Remote Stream wird zugewiesen...", remoteStream.getAudioTracks());
       remoteAudioRef.current.srcObject = remoteStream;
-      remoteAudioRef.current.play().catch(err => {
-        console.error("Autoplay wurde blockiert:", err);
-        // Optional: Zeige dem Nutzer einen Button "Ton aktivieren"
-      });
+      
+      // Expliziter Play-Befehl
+      remoteAudioRef.current.play()
+        .then(() => {
+          console.log("✅ Audio spielt erfolgreich ab");
+          setAutoplayBlocked(false);
+        })
+        .catch(err => {
+          console.error("❌ Autoplay vom Browser blockiert:", err);
+          setAutoplayBlocked(true); // Zeigt dem Nutzer einen Button zum Aktivieren
+        });
     }
-  }, [remoteStream]);
+  }, [remoteStream, callStatus]);
 
   if (callStatus === 'idle') return null;
 
@@ -22,19 +37,29 @@ export default function CallOverlay({ callStatus, incomingCall, acceptCall, reje
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
-  // FIX: Wenn wir angerufen werden, priorisiere den Namen aus dem eingehenden Anruf
   const isIncoming = callStatus === 'ringing' && incomingCall;
-  const displayName = isIncoming ? (incomingCall.callerName || incomingCall.callerId || "Unbekannt") : (activeChat?.name || "Anruf...");
-  const avatarRing = callStatus === 'connected' ? 'ring-2 ring-green-500 animate-pulse' : '';
+  const displayName = isIncoming 
+    ? (incomingCall.callerName || "Unbekannt") 
+    : (activeChat?.name || "Anruf...");
 
-  // Vollbild-Overlay für eingehende Anrufe (Ringing)
+  // Einziges Audio-Element, das den Ton wiedergibt
+  const RemoteAudio = (
+    <audio 
+      ref={remoteAudioRef} 
+      autoPlay 
+      playsInline 
+      className="hidden" 
+    />
+  );
+
+  // --- UI: Eingehender Anruf ---
   if (callStatus === 'ringing') {
     return (
       <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-[999] backdrop-blur-md">
-        <audio ref={remoteAudioRef} autoPlay playsInline controls={false} />
+        {RemoteAudio}
         <div className="bg-[#2f3136] p-10 rounded-3xl shadow-2xl flex flex-col items-center w-80 border border-white/10">
-          <div className="w-24 h-24 rounded-full bg-[#4f545c] flex items-center justify-center text-white text-4xl font-bold mb-6 shadow-xl">
-            {activeChat?.photoURL && activeChat?.name === displayName ? <img src={activeChat.photoURL} className="w-full h-full object-cover" alt="avatar" /> : displayName[0]?.toUpperCase()}
+          <div className="w-24 h-24 rounded-full bg-[#4f545c] flex items-center justify-center text-white text-4xl font-bold mb-6 shadow-xl overflow-hidden">
+            {activeChat?.photoURL ? <img src={activeChat.photoURL} className="w-full h-full object-cover" alt="avatar" /> : displayName[0]?.toUpperCase()}
           </div>
           <h2 className="text-white text-2xl font-bold mb-1">{displayName}</h2>
           <p className="text-indigo-300 text-sm mb-10 uppercase tracking-widest animate-pulse">ruft an...</p>
@@ -47,49 +72,59 @@ export default function CallOverlay({ callStatus, incomingCall, acceptCall, reje
     );
   }
 
-  // Dynamische Ringe für Sprech-Erkennung
+  // --- UI: Während des Telefonats ---
   const localAvatarRing = isUserSpeaking && !isMuted ? 'ring-4 ring-[#3ba55c] shadow-[0_0_15px_rgba(59,165,92,0.4)]' : 'ring-2 ring-transparent';
   const remoteAvatarRing = isPartnerSpeaking ? 'ring-4 ring-[#3ba55c] shadow-[0_0_15px_rgba(59,165,92,0.4)]' : 'ring-2 ring-transparent';
 
-  // Schmaler Header im Chat für "calling" und "connected"
   return (
     <div className="w-full bg-[#202225] border-b border-[#1e1f22] py-6 flex flex-col items-center justify-center z-20 shrink-0 shadow-md gap-6">
-      <audio ref={remoteAudioRef} autoPlay playsInline controls={false} />
+      {RemoteAudio}
+
+      {/* Notfall-Button falls Autoplay blockiert wurde */}
+      {autoplayBlocked && (
+        <button 
+          onClick={() => remoteAudioRef.current?.play()}
+          className="bg-yellow-500 text-black px-4 py-2 rounded-full font-bold flex items-center gap-2 animate-bounce"
+        >
+          <Volume2 size={20} /> Ton aktivieren
+        </button>
+      )}
       
-      {/* Avatare zentriert nebeneinander */}
-      <div className="flex items-center justify-center gap-2">
+      <div className="flex items-center justify-center gap-12">
         {/* Eigener Avatar */}
         <div className="flex flex-col items-center gap-2">
-          <div className={`w-24 h-24 rounded-full bg-[#4f545c] flex items-center justify-center text-white text-3xl font-bold overflow-hidden transition-all duration-150 ${localAvatarRing}`}>
-            {currentUser?.photoURL ? <img src={currentUser.photoURL} alt="Du" className="w-full h-full object-cover" /> : currentUser?.username?.[0]?.toUpperCase() || 'D'}
+          <div className={`w-20 h-20 rounded-full bg-[#4f545c] flex items-center justify-center text-white text-2xl font-bold overflow-hidden transition-all duration-150 ${localAvatarRing}`}>
+            {currentUser?.photoURL ? <img src={currentUser.photoURL} alt="Du" className="w-full h-full object-cover" /> : currentUser?.username?.[0]?.toUpperCase()}
           </div>
-          <span className="text-[#b9bbbe] text-sm font-bold">{currentUser?.username || 'Du'}</span>
+          <span className="text-[#b9bbbe] text-xs font-bold uppercase tracking-wider">Du</span>
+        </div>
+
+        <div className="flex flex-col items-center gap-2">
+           <div className="bg-black/40 px-4 py-1 rounded-full text-white font-mono text-sm border border-white/5">
+             {callStatus === 'connected' ? formatTime(callDuration) : 'Verbinde...'}
+           </div>
+           <div className="h-[2px] w-12 bg-white/10"></div>
         </div>
 
         {/* Partner Avatar */}
         <div className="flex flex-col items-center gap-2">
-          <div className={`w-24 h-24 rounded-full bg-[#4f545c] flex items-center justify-center text-white text-3xl font-bold overflow-hidden transition-all duration-300 ${remoteAvatarRing}`}>
+          <div className={`w-20 h-20 rounded-full bg-[#4f545c] flex items-center justify-center text-white text-2xl font-bold overflow-hidden transition-all duration-300 ${remoteAvatarRing}`}>
             {activeChat?.photoURL ? <img src={activeChat.photoURL} alt={displayName} className="w-full h-full object-cover" /> : displayName?.[0]?.toUpperCase()}
           </div>
-          <span className="text-[#b9bbbe] text-sm font-bold">{displayName}</span>
+          <span className="text-[#b9bbbe] text-xs font-bold uppercase tracking-wider">{displayName}</span>
         </div>
       </div>
 
-      {/* Timer & Controls darunter */}
-      <div className="flex items-center gap-6">
-        <div className="text-white font-mono text-lg font-bold min-w-[70px] text-center bg-black/20 px-3 py-1 rounded-md shadow-inner">
-          {callStatus === 'connected' ? formatTime(callDuration) : 'Wählt...'}
-        </div>
-        <div className="flex items-center gap-4">
-          {callStatus === 'connected' && (
-            <button onClick={toggleMute} className={`${isMuted ? 'bg-[#ed4245] hover:bg-[#c13b3e]' : 'bg-[#4f545c] hover:bg-[#686d73]'} p-4 rounded-full text-white transition-colors shadow-lg`} title="Stummschalten">
-              {isMuted ? <MicOff size={24} /> : <Mic size={24} />}
-            </button>
-          )}
-          <button onClick={endCall} className="bg-[#ed4245] hover:bg-[#c13b3e] p-4 rounded-full text-white transition-colors shadow-lg" title="Auflegen">
-            <PhoneOff size={24} />
+      {/* Steuerung */}
+      <div className="flex items-center gap-4">
+        {callStatus === 'connected' && (
+          <button onClick={toggleMute} className={`${isMuted ? 'bg-[#ed4245]' : 'bg-[#4f545c]'} p-4 rounded-full text-white hover:opacity-80 transition-all shadow-lg`}>
+            {isMuted ? <MicOff size={24} /> : <Mic size={24} />}
           </button>
-        </div>
+        )}
+        <button onClick={endCall} className="bg-[#ed4245] p-4 rounded-full text-white hover:scale-105 transition-all shadow-lg">
+          <PhoneOff size={24} />
+        </button>
       </div>
     </div>
   );
