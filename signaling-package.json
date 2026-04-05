@@ -1,0 +1,15 @@
+{
+  "name": "discord-signaling-server",
+  "version": "1.0.0",
+  "description": "Minimaler WebRTC Signaling-Server via Socket.io",
+  "main": "signaling-server.cjs",
+  "scripts": {
+    "start": "node signaling-server.cjs"
+  },
+  "dependencies": {
+    "socket.io": "^4.8.3"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

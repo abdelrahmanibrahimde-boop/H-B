@@ -1,8 +1,10 @@
-const io = require('socket.io')(5000, {
+const PORT = process.env.PORT || 5000;
+
+const io = require('socket.io')(PORT, {
   cors: { origin: "*", methods: ["GET", "POST"] }
 });
 
-console.log("🚀 AUDIO-ONLY Server auf Port 5000 bereit");
+console.log(`🚀 AUDIO-ONLY Server auf Port ${PORT} bereit`);
 
 io.on('connection', (socket) => {
   socket.on('register', (userId) => {
